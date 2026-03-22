@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase/app";
-import { getDatabase, ref, set, get, onValue, update, onDisconnect, push, serverTimestamp, remove } from "firebase/database";
+import { getDatabase, ref, set, get, onValue, update, onDisconnect, push, serverTimestamp, remove, increment, runTransaction } from "firebase/database";
 
 let config = null;
 let db = null;
@@ -58,8 +58,7 @@ async function init() {
         // Check hash for auto-join
         const hash = window.location.hash.substring(1);
         if (hash && /^\d{8}$/.test(hash)) {
-            document.getElementById('jo-id').value = hash;
-            log(`已偵測到邀請連結(房號: ${hash})，請輸入暱稱直接加入。`, 'warn');
+            showLanding(hash);
         }
 
         log('系統已就緒，請建立或加入房間。', 'ok');
@@ -82,101 +81,87 @@ function setupUIStrings() {
 }
 
 // ===== CORE ACTIONS =====
+
 async function doCreate() {
-    log('--- 開始建立房間流程 ---', 'info');
+    const nick = document.getElementById('lb-nick').value.trim() || '未命名1';
+    const pw = document.getElementById('cr-pw').value.trim();
+    const newRoomId = Math.floor(10000000 + Math.random() * 90000000).toString();
+
+    myInfo = { nick, color: document.getElementById('lb-col-inp').value, textColor: document.getElementById('lb-txt-inp').value, isHost: true };
+
+    // Initial Map Data (10x4)
+    const mapData = Array(10).fill(null).map(() =>
+        Array(4).fill(null).map(() => ({ v: 0, owner: null, errors: [], maybe: [], certain: false }))
+    );
+
+    const roomState = {
+        config: {
+            name: document.getElementById('cr-name').value.trim() || '未命名的房間',
+            password: pw,
+            options: {
+                auto: document.getElementById('cr-auto').checked,
+                members: document.getElementById('cr-members').checked,
+                chat: document.getElementById('cr-chat').checked,
+                seq: document.getElementById('cr-seq').value
+            },
+            createdAt: serverTimestamp(),
+            lastActive: serverTimestamp(),
+            hostId: myUid
+        },
+        players: {
+            [myUid]: myInfo
+        },
+        mapData: mapData
+    };
+
+    log('正在建立房間...', 'info');
     try {
-        // [STEP 1] 讀取基本資料
-        log('[STEP 1] 正在抓取輸入欄位...', 'info');
-        const elNick = document.getElementById('lb-nick');
-        const elName = document.getElementById('cr-name');
-        const elPw = document.getElementById('cr-pw');
-        const elCol = document.getElementById('lb-col-inp');
-        const elTxt = document.getElementById('lb-txt-inp');
-
-        if (!elNick || !elName || !elCol) {
-            log('錯誤: 找不到 DOM 元素，請檢查 index.html', 'error');
-            throw new Error('UI 元素遺失');
-        }
-
-        const nick = elNick.value.trim() || '未命名' + Math.floor(Math.random() * 100);
-        const newRoomId = Math.floor(10000000 + Math.random() * 90000000).toString();
-
-        log(`[STEP 2] 使用者: ${nick}, 預計房號: ${newRoomId}`, 'info');
-
-        // 確保 UID 已產出
-        if (!myUid) {
-            log('錯誤: myUid 為空，LocalStorage 可能受限', 'error');
-            throw new Error('UID 未初始化');
-        }
-
-        myInfo = {
-            nick,
-            color: elCol.value,
-            textColor: elTxt.value,
-            isHost: true
-        };
-
-        // [STEP 2] 檢查 Firebase 是否就緒
-        log('[STEP 3] 檢查 Firebase 連線狀態...', 'info');
-        if (!db) {
-            log('錯誤: 資料庫 (db) 物件為 null', 'error');
-            throw new Error('Firebase 連線未建立');
-        }
-
-        // [STEP 3] 封裝房間狀態
-        log('[STEP 4] 封裝房間 JSON 數據...', 'info');
-        const mapData = Array(10).fill(null).map(() =>
-            Array(4).fill(null).map(() => ({ v: 0, owner: null, errors: [], maybe: [], certain: false }))
-        );
-
-        const roomState = {
-            config: {
-                name: elName.value.trim() || '未命名的房間',
-                password: elPw.value.trim(),
-                options: {
-                    auto: document.getElementById('cr-auto').checked,
-                    members: document.getElementById('cr-members').checked,
-                    chat: document.getElementById('cr-chat').checked,
-                    seq: document.getElementById('cr-seq').value
-                },
-                createdAt: serverTimestamp(),
-                lastActive: serverTimestamp(),
-                hostId: myUid
-            },
-            players: {
-                [myUid]: myInfo
-            },
-            mapData: mapData
-        };
-
-        log('[STEP 5] 正在向 Firebase [set] 發送請求...', 'warn');
-
-        // [STEP 4] 異步發送並加上 10 秒超時監控
-        const writePromise = set(ref(db, `rooms/${newRoomId}`), roomState);
-        const timeoutPromise = new Promise((_, reject) =>
-            setTimeout(() => reject(new Error('Firebase 延遲過久，請檢查 Rules 或網路')), 10000)
-        );
-
-        await Promise.race([writePromise, timeoutPromise]);
-
-        log('[STEP 6] Firebase 回傳 Success!', 'ok');
-        log('進入房間串流...', 'ok');
-
+        await set(ref(db, `rooms/${newRoomId}`), roomState);
+        await update(ref(db, 'stats/global'), {
+            activeRooms: increment(1),
+            onlineUsers: increment(1)
+        });
         joinRoomStream(newRoomId);
-
     } catch (err) {
-        console.error('DEBUG - doCreate Failed:', err);
-        log(`!!! 建立失敗 [${err.name}]: ${err.message}`, 'error');
+        log('建立失敗: ' + err.message, 'error');
     }
+}
+
+async function doJoinLanding() {
+    const rid = document.getElementById('landing-rid-badge').textContent.replace('#', '');
+    const nick = document.getElementById('ld-nick').value.trim();
+    const pw = document.getElementById('ld-pw').value.trim();
+    const color = document.getElementById('ld-col-inp').value;
+    const textColor = document.getElementById('ld-txt-inp').value;
+
+    // Prefill main inputs just in case
+    document.getElementById('lb-nick').value = nick;
+    document.getElementById('lb-col-inp').value = color;
+    document.getElementById('lb-txt-inp').value = textColor;
+    document.getElementById('jo-id').value = rid;
+    document.getElementById('jo-pw').value = pw;
+
+    doJoin();
+}
+
+function showLanding(rid) {
+    document.getElementById('screen-lobby').style.display = 'none';
+    document.getElementById('screen-landing').style.display = 'flex';
+    document.getElementById('landing-rid-badge').textContent = '#' + rid;
+    
+    // Sync color swatches in landing
+    document.getElementById('ld-col-inp').addEventListener('input', e => {
+        document.getElementById('ld-col-sw').style.background = e.target.value;
+    });
+    document.getElementById('ld-txt-inp').addEventListener('input', e => {
+        document.getElementById('ld-txt-sw').style.background = e.target.value;
+    });
 }
 
 async function doJoin() {
     const targetRoomId = document.getElementById('jo-id').value.trim();
     const pw = document.getElementById('jo-pw').value.trim();
     if (!/^\d{8}$/.test(targetRoomId)) return alert('房號應為 8 位數字。');
-
-    const nick = document.getElementById('lb-nick').value.trim() || '未命名' + Math.floor(Math.random() * 100);
-    myInfo = { nick, color: document.getElementById('lb-col-inp').value, textColor: document.getElementById('lb-txt-inp').value, isHost: false };
 
     log('正在加入房間...', 'info');
     try {
@@ -188,9 +173,16 @@ async function doJoin() {
 
         const playerArray = Object.values(data.players || {});
         if (playerArray.length >= 4) return alert('房間已滿。');
+        
+        const nick = document.getElementById('lb-nick').value.trim() || ('未命名' + (playerArray.length + 1));
+        myInfo = { nick, color: document.getElementById('lb-col-inp').value, textColor: document.getElementById('lb-txt-inp').value, isHost: false };
+
         if (playerArray.some(p => p.nick === nick)) return alert('暱稱重複。');
 
         await set(ref(db, `rooms/${targetRoomId}/players/${myUid}`), myInfo);
+        await update(ref(db, 'stats/global'), {
+            onlineUsers: increment(1)
+        });
         joinRoomStream(targetRoomId);
     } catch (err) {
         log('加入失敗: ' + err.message, 'error');
@@ -201,14 +193,32 @@ function joinRoomStream(rid) {
     roomId = rid;
     window.location.hash = rid;
     document.getElementById('screen-lobby').style.display = 'none';
+    document.getElementById('screen-landing').style.display = 'none';
     document.getElementById('screen-room').style.display = 'flex';
     document.getElementById('rid-box').textContent = `房號: ${rid}`;
+
+    // Logs subscription
+    const logsRef = ref(db, `rooms/${rid}/logs`);
+    let lastLogTime = Date.now();
+    onValue(logsRef, (snap) => {
+        const data = snap.val();
+        if (!data) return;
+        const entries = Object.values(data);
+        entries.forEach(e => {
+            if (e.time > lastLogTime) {
+                log(e.msg, e.type);
+                lastLogTime = e.time;
+            }
+        });
+    });
 
     // Subscribe
     onValue(ref(db, `rooms/${rid}`), (snap) => {
         if (!snap.exists()) {
-            alert('房間已被刪除或失效。');
-            leaveRoom();
+            if (roomId) {
+                alert('房間已被刪除或失效。');
+                leaveRoom();
+            }
             return;
         }
         roomData = snap.val();
@@ -219,11 +229,13 @@ function joinRoomStream(rid) {
 
     // Auto remove on disconnect
     onDisconnect(ref(db, `rooms/${rid}/players/${myUid}`)).remove();
+    onDisconnect(ref(db, 'stats/global/onlineUsers')).set(increment(-1));
 
     log(`連線成功！房號: ${rid}`, 'ok');
 }
 
 function renderRoom() {
+    if (!roomData) return;
     const players = Object.values(roomData.players || {});
     const isHost = roomData.config.hostId === myUid;
     myInfo.isHost = isHost;
@@ -249,6 +261,13 @@ function renderRoom() {
     renderPlayerList(roomData.players || {});
     renderGrid();
     updatePathRecord();
+
+    // Check for closed room
+    if (roomData.config.status === 'closed') {
+        alert('房主已重建/關閉房間，連線已失效。');
+        leaveRoom();
+        return;
+    }
 }
 
 function renderPlayerList(playersObj) {
@@ -268,7 +287,7 @@ function renderPlayerList(playersObj) {
 
         let html = (p.isHost ? '👑 ' : '🙎‍♂️ ') + p.nick;
         if (isHost && uid !== myUid) {
-            html += ` <button onclick="app.kickPlayer('${uid}', '${p.nick}')" style="background:none; border:none; color:#ef4444; cursor:pointer; font-weight:bold; margin-left:5px;">[X]</button>`;
+            html += ` <button onclick="app.kickPlayer('${uid}', '${p.nick}')" style="background:none; border:none; color:#ef4444; cursor:pointer; font-weight:bold; margin-left:5px;">x</button>`;
         }
         span.innerHTML = html;
         plist.appendChild(span);
@@ -281,7 +300,7 @@ function renderPlayerList(playersObj) {
         span.className = 'mtag';
         span.style.opacity = '0.4';
         span.style.fontStyle = 'italic';
-        span.textContent = '💀 ' + BOT_NAMES[i];
+        span.textContent = BOT_NAMES[i];
         plist.appendChild(span);
     }
 }
@@ -486,6 +505,17 @@ function resetIdleTimer() {
 function leaveRoom() {
     if (roomId) {
         remove(ref(db, `rooms/${roomId}/players/${myUid}`));
+        update(ref(db, 'stats/global'), {
+            onlineUsers: increment(-1)
+        });
+        
+        // If it was the last person, decrement activeRooms (approximate)
+        if (roomData && Object.keys(roomData.players || {}).length <= 1) {
+            update(ref(db, 'stats/global'), {
+                activeRooms: increment(-1)
+            });
+        }
+
         roomId = null;
         window.location.hash = '';
         document.getElementById('screen-lobby').style.display = 'flex';
@@ -495,17 +525,39 @@ function leaveRoom() {
 }
 
 async function rebuildRoom() {
-    if (!confirm('重建房間將清空所有數據，確定嗎？')) return;
-    const initialMap = Array(10).fill(null).map(() =>
-        Array(4).fill(null).map(() => ({ v: 0, owner: null, errors: [], maybe: [], certain: false }))
-    );
-    await update(ref(db, `rooms/${roomId}`), { mapData: initialMap });
-    log('房間已重建', 'warn');
+    if (!confirm('重建房間將踢出所有成員並關閉當前房間，確定嗎？')) return;
+    await update(ref(db, `rooms/${roomId}/config`), { status: 'closed' });
+    // Small delay to let others see
+    setTimeout(() => {
+        remove(ref(db, `rooms/${roomId}`));
+    }, 1000);
 }
 
 async function resetAll() {
     if (!confirm('確定清空所有標記？')) return;
-    rebuildRoom();
+    
+    // Log everyone's path to room log (Shared)
+    const players = Object.values(roomData.players || {});
+    players.forEach(p => {
+        let pRecord = getPathRecordText(p.nick);
+        sendRoomLog(`[系統] 玩家 ${p.nick} 的紀錄: ${pRecord}`, 'info');
+    });
+
+    sendRoomLog('已由房主清空所有標記', 'warn');
+
+    const initialMap = Array(10).fill(null).map(() =>
+        Array(4).fill(null).map(() => ({ v: 0, owner: null, errors: [], maybe: [], certain: false }))
+    );
+    await update(ref(db, `rooms/${roomId}`), { mapData: initialMap });
+}
+
+function sendRoomLog(msg, type = 'info') {
+    if (!roomId) return;
+    push(ref(db, `rooms/${roomId}/logs`), {
+        msg,
+        type,
+        time: serverTimestamp()
+    });
 }
 
 // ===== UTILS =====
@@ -520,18 +572,23 @@ function log(msg, type = 'info') {
 
 function updatePathRecord() {
     const el = document.getElementById('path-record');
+    el.textContent = getPathRecordText(myInfo.nick);
+}
+
+function getPathRecordText(nick) {
     const path = [];
     for (let f = 9; f >= 0; f--) {
         const floor = roomData.mapData[f];
         let found = '_';
         floor.forEach((cell, idx) => {
-            if (cell.v === 1) found = (idx + 1);
+            if (cell.v === 1 && cell.owner === nick) {
+                if (options.seq === '4321') found = (4 - idx);
+                else found = (idx + 1);
+            }
         });
         path.push(found);
     }
-    // format: XXX-XXX-XXX-X
-    const formatted = path.slice(0, 3).join('') + '-' + path.slice(3, 6).join('') + '-' + path.slice(6, 9).join('') + '-' + path[9];
-    el.textContent = formatted;
+    return path.slice(0, 3).join('') + '-' + path.slice(3, 6).join('') + '-' + path.slice(6, 9).join('') + '-' + path[9];
 }
 
 // Define on window for HTML onclicks
@@ -552,7 +609,30 @@ window.app = {
         });
         inp.value = '';
     },
-    openEditNick: () => { alert('請重新加入房間以修改（功能開發中）'); },
+    openEditNick: () => {
+        const newNick = prompt('輸入新暱稱 (留空則不修改):', myInfo.nick);
+        if (newNick === null) return;
+        const finalNick = newNick.trim() || myInfo.nick;
+        
+        // Show color picker or just update. For simplicity, we assume they might want to change color too.
+        // But prompt only allows text. Let's redirect to lobby logic but auto-join if they want to change more.
+        if (confirm(`暱稱將改為 ${finalNick}。系統將自動重新加入房間以套用變更（免密碼）。`)) {
+            myInfo.nick = finalNick;
+            document.getElementById('lb-nick').value = finalNick;
+            const rid = roomId;
+            // Leave room and rejoin
+            remove(ref(db, `rooms/${rid}/players/${myUid}`));
+            update(ref(db, 'stats/global'), { onlineUsers: increment(-1) });
+            
+            // Re-join logic (skipping PW check by directly setting)
+            setTimeout(async () => {
+                await set(ref(db, `rooms/${rid}/players/${myUid}`), myInfo);
+                update(ref(db, 'stats/global'), { onlineUsers: increment(1) });
+                joinRoomStream(rid);
+            }, 500);
+        }
+    },
+    doJoinLanding,
     editPassword: async () => {
         const newPw = prompt('請輸入新密碼 (留空則取消密碼):', roomData.config.password || '');
         if (newPw === null) return;

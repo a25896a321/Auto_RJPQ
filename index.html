@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
@@ -7,13 +8,16 @@
     <meta property="og:title" content="Artale_RJPQ_oojump">
     <meta property="og:description" content="多人即時同步標記，輔助隊伍順利通關 RJPQ">
     <title>Artale_RJPQ_oojump - Firebase RTDB</title>
-    
+
     <!-- Google Fonts -->
-    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700;900&family=Inter:wght@400;700;900&display=swap" rel="stylesheet">
-    
+    <link
+        href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700;900&family=Inter:wght@400;700;900&display=swap"
+        rel="stylesheet">
+
     <!-- Local Styles -->
     <link rel="stylesheet" href="styles.css">
 </head>
+
 <body>
     <div class="bg-wrap"></div>
 
@@ -45,19 +49,24 @@
 
         <div class="card" id="card-create">
             <div class="ctitle" id="txt-create-room">🏠 建立房間</div>
-            <div class="field-group" id="adv-body" style="display: none; flex-direction: column; gap: 10px; margin-bottom: 12px;">
+            <div class="field-group" id="adv-body"
+                style="display: none; flex-direction: column; gap: 10px; margin-bottom: 12px;">
                 <input type="text" class="field" id="cr-name" placeholder="房間名稱 (選填)...">
                 <input type="text" class="field" id="cr-pw" placeholder="設定密碼 (選填)...">
-                <select id="cr-seq" class="field" style="background: #1e293b;"></select>
+                <select id="cr-seq" class="field" style="background: #0b0b14;"></select>
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-                    <label style="font-size: 11px; color: var(--muted); cursor: pointer;"><input type="checkbox" id="cr-auto" checked> 自動推算</label>
-                    <label style="font-size: 11px; color: var(--muted); cursor: pointer;"><input type="checkbox" id="cr-members" checked> 顯示成員</label>
-                    <label style="font-size: 11px; color: var(--muted); cursor: pointer;"><input type="checkbox" id="cr-chat" checked> 聊天室</label>
+                    <label style="font-size: 11px; color: var(--muted); cursor: pointer;"><input type="checkbox"
+                            id="cr-auto" checked> 自動推算</label>
+                    <label style="font-size: 11px; color: var(--muted); cursor: pointer;"><input type="checkbox"
+                            id="cr-members" checked> 顯示成員</label>
+                    <label style="font-size: 11px; color: var(--muted); cursor: pointer;"><input type="checkbox"
+                            id="cr-chat" checked> 聊天室</label>
                 </div>
             </div>
             <div style="display: flex; gap: 8px;">
                 <button class="btn" id="btn-toggle-adv" onclick="toggleAdv()">⚙️</button>
-                <button class="btn btn-pri" style="flex: 1;" onclick="app.doCreate()" id="txt-btn-create">✨ 建立房間</button>
+                <button class="btn btn-pri" style="flex: 1;" onclick="app.doCreate()" id="txt-btn-create">✨
+                    建立房間</button>
             </div>
         </div>
 
@@ -66,7 +75,8 @@
             <div style="display: flex; flex-direction: column; gap: 8px;">
                 <input type="text" class="field" id="jo-id" placeholder="輸入 8 位房號...">
                 <input type="text" class="field" id="jo-pw" placeholder="密碼 (如有)...">
-                <button class="btn btn-gld" style="width: 100%;" onclick="app.doJoin()" id="txt-btn-join">🔑 加入房間</button>
+                <button class="btn btn-gld" style="width: 100%;" onclick="app.doJoin()" id="txt-btn-join">🔑
+                    加入房間</button>
             </div>
         </div>
 
@@ -74,14 +84,50 @@
             <div class="ctitle" id="txt-stats-title" style="justify-content: center;">🌐 伺服器狀態</div>
             <div style="display: flex; justify-content: space-around; padding: 5px 0;">
                 <div>
-                   <div id="stat-rooms" style="font-size: 24px; font-weight: 900; color: var(--acc2);">--</div>
-                   <div style="font-size: 10px; color: var(--muted);">活躍房間</div>
+                    <div id="stat-rooms" style="font-size: 24px; font-weight: 900; color: var(--acc2);">--</div>
+                    <div style="font-size: 10px; color: var(--muted);">活躍房間</div>
                 </div>
                 <div>
-                   <div id="stat-users" style="font-size: 24px; font-weight: 900; color: var(--acc2);">--</div>
-                   <div style="font-size: 10px; color: var(--muted);">在線人數</div>
+                    <div id="stat-users" style="font-size: 24px; font-weight: 900; color: var(--acc2);">--</div>
+                    <div style="font-size: 10px; color: var(--muted);">在線人數</div>
                 </div>
             </div>
+        </div>
+
+        <div class="card" style="text-align: center; background: none; border: none; box-shadow: none; padding-top: 0;">
+            <div style="font-size: 11px; color: var(--muted); opacity: 0.6;">
+                此網站版本只允許最多 100 人在線，感謝見諒。
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Join Landing Screen -->
+    <div id="screen-landing" class="wrap" style="display: none;">
+        <div class="header">
+            <div class="h-title">⚔️ 快速加入房間</div>
+            <div class="h-badge" id="landing-rid-badge">#--------</div>
+        </div>
+
+        <div class="card">
+            <div class="ctitle">玩家設定</div>
+            <div class="color-group">
+                <div class="color-box">
+                    <span>代表色</span>
+                    <div class="color-swatch" id="ld-col-sw" style="background: #7B241C">
+                        <input type="color" class="color-input" id="ld-col-inp" value="#7B241C">
+                    </div>
+                </div>
+                <div class="color-box">
+                    <span>字體色</span>
+                    <div class="color-swatch" id="ld-txt-sw" style="background: #FFFFFF">
+                        <input type="color" class="color-input" id="ld-txt-inp" value="#ffffff">
+                    </div>
+                </div>
+            </div>
+            <input type="text" class="field" id="ld-nick" maxlength="10" placeholder="輸入暱稱...">
+            <input type="text" class="field" id="ld-pw" style="margin-top: 10px;" placeholder="輸入房門密碼 (如無則留空)...">
+            <button class="btn btn-pri" style="width: 100%; margin-top: 15px;" onclick="app.doJoinLanding()">🚀 立即進入</button>
+            <button class="btn" style="width: 100%; margin-top: 8px;" onclick="window.location.hash=''; window.location.reload();">⬅ 返回大廳</button>
         </div>
     </div>
 
@@ -93,29 +139,36 @@
 
         <div class="card">
             <div class="ctitle" id="txt-info-section">房間資訊</div>
-            <div id="room-name-display" style="font-size: 18px; font-weight: 900; color: var(--goldc); margin-bottom: 8px;">房間: ---</div>
+            <div id="room-name-display"
+                style="font-size: 18px; font-weight: 900; color: var(--goldc); margin-bottom: 8px;">房間: ---</div>
             <div style="display: grid; grid-template-columns: 1fr auto auto auto; gap: 8px; align-items: center;">
-                <div id="rid-box" class="field" style="font-family: monospace; background: rgba(0,0,0,0.4);">房號: --------</div>
+                <div id="rid-box" class="field" style="font-family: monospace; background: rgba(0,0,0,0.4);">房號:
+                    --------</div>
                 <button class="btn" onclick="app.copyId()" title="複製房號">📋</button>
-                <button class="btn btn-gld" onclick="location.reload()" title="刷新頁面">🔄</button>
                 <button class="btn btn-dng" onclick="app.leaveRoom()" id="txt-btn-leave">🚪 離開</button>
             </div>
             <div id="pw-row" style="margin-top: 8px; display: none; grid-template-columns: 1fr auto auto; gap: 8px;">
-                <div id="pw-box" class="field" style="color: var(--goldc); background: rgba(245, 158, 11, 0.05);">密碼: ------</div>
+                <div id="pw-box" class="field" style="color: var(--goldc); background: rgba(245, 158, 11, 0.05);">密碼:
+                    ------</div>
                 <button class="btn" onclick="app.copyPw()" title="複製密碼">📋</button>
-                <button class="btn btn-gld" id="btn-edit-pw" style="display: none;" onclick="app.editPassword()" title="編輯密碼">✏️</button>
+                <button class="btn btn-gld" id="btn-edit-pw" style="display: none;" onclick="app.editPassword()"
+                    title="編輯密碼">✏️</button>
             </div>
             <div style="display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap;">
                 <button class="btn btn-sm" onclick="app.openEditNick()">✏️ 修改暱稱/顏色</button>
                 <button class="btn btn-sm btn-gld" onclick="app.copyInvite()">🔗 邀請連結</button>
-                <button class="btn btn-sm btn-dng" id="btn-rebuild" style="display: none;" onclick="app.rebuildRoom()">🔨 重建</button>
-                <button class="btn btn-sm" id="btn-reset" style="display: none;" onclick="app.resetAll()">🗑️ 清空標記</button>
+                <button class="btn btn-sm btn-dng" id="btn-rebuild" style="display: none;"
+                    onclick="app.rebuildRoom()">🔨 重建</button>
+                <button class="btn btn-sm" id="btn-reset" style="display: none;" onclick="app.resetAll()">🗑️
+                    清空標記</button>
             </div>
         </div>
 
         <div class="card" id="members-sec">
             <div class="ctitle" id="txt-member-section">房間成員（💀為待補）</div>
-            <div id="plist" style="display: flex; flex-wrap: wrap; gap: 6px; padding: 10px; background: rgba(0,0,0,0.2); border-radius: var(--rsm);"></div>
+            <div id="plist"
+                style="display: flex; flex-wrap: wrap; gap: 6px; padding: 10px; background: rgba(0,0,0,0.2); border-radius: var(--rsm);">
+            </div>
         </div>
 
         <div class="card">
@@ -131,7 +184,9 @@
         <div class="card" style="text-align: center;">
             <div class="ctitle" id="txt-record-label" style="justify-content: center;">你的活路紀錄</div>
             <div style="display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 8px;">
-                <div id="path-record" style="font-family: monospace; font-size: 24px; font-weight: 900; color: var(--green); letter-spacing: 2px;">___-___-___-_</div>
+                <div id="path-record"
+                    style="font-family: monospace; font-size: 24px; font-weight: 900; color: var(--green); letter-spacing: 2px;">
+                    ___-___-___-_</div>
                 <button class="btn" onclick="app.copyPath()" title="複製">📋</button>
             </div>
         </div>
@@ -139,7 +194,7 @@
         <div class="card" id="map-area">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
                 <div class="ctitle" id="txt-map-title" style="margin-bottom: 0;">⬆ 樓梯地圖</div>
-                <select id="fz-sel" class="field" style="width: auto; padding: 4px 8px; font-size: 11px;">
+                <select id="fz-sel" class="field" style="width: auto; padding: 4px 8px; font-size: 11px; background: #0b0b14;">
                     <option value="fz-sm">小字體</option>
                     <option value="fz-md" selected>中字體</option>
                     <option value="fz-lg">大字體</option>
@@ -152,17 +207,18 @@
             <div class="ctitle" id="txt-chat-title">💬 聊天室</div>
             <div class="chat-window" id="chat-msgs"></div>
             <div style="display: flex; gap: 8px;">
-                <input type="text" id="chat-inp" class="field" placeholder="訊息..." onkeydown="if(event.key==='Enter')app.sendChat()">
+                <input type="text" id="chat-inp" class="field" placeholder="訊息..."
+                    onkeydown="if(event.key==='Enter')app.sendChat()">
                 <button class="btn btn-pri" onclick="app.sendChat()" id="txt-btn-send">發送</button>
             </div>
         </div>
 
         <div class="card" style="font-size: 11px; color: var(--muted); line-height: 1.8;">
-             <div id="txt-instr-left">🖱️ 左鍵：標記正確 (每層限1格)</div>
-             <div id="txt-instr-right">🖱️ 右鍵：標記死路 (每層限3格)</div>
-             <div id="txt-instr-mobile">📱 手機：單點=正確 / 雙擊=死路</div>
-             <div id="txt-instr-bot">💀 灰色虛線：系統替補Bot</div>
-             <div id="txt-instr-maybe">🟣 紫框：推算可能 / 🟡 金框：唯一確定</div>
+            <div id="txt-instr-left">🖱️ 左鍵：標記正確 (每層限1格)</div>
+            <div id="txt-instr-right">🖱️ 右鍵：標記死路 (每層限3格)</div>
+            <div id="txt-instr-mobile">📱 手機：單點=正確 / 雙擊=死路</div>
+            <div id="txt-instr-bot">💀 灰色虛線：系統替補Bot</div>
+            <div id="txt-instr-maybe">🟣 紫框：推算可能 / 🟡 金框：唯一確定</div>
         </div>
     </div>
 
@@ -180,7 +236,7 @@
     </script>
 
     <script type="module" src="app.js"></script>
-    
+
     <script>
         function toggleAdv() {
             const body = document.getElementById('adv-body');
@@ -188,10 +244,9 @@
         }
         function toggleLog() {
             const container = document.getElementById('log-container');
-            const arrow = document.getElementById('log-arrow');
             container.classList.toggle('show');
-            arrow.textContent = container.classList.contains('show') ? '▲' : '▼';
         }
     </script>
 </body>
+
 </html>
