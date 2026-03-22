@@ -1,0 +1,11 @@
+# IDEs
+.idea/
+.vscode/
+
+# Project specific
+.gemini/
+*.log
+
+# Windows
+Thumbs.db
+Desktop.ini

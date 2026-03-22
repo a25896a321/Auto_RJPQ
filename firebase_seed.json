@@ -1,0 +1,99 @@
+{
+  "rooms": {
+    "88888888": {
+      "config": {
+        "password": "",
+        "options": {
+          "auto": true,
+          "members": true,
+          "chat": true,
+          "seq": "1234"
+        },
+        "createdAt": 1711111111000,
+        "lastActive": 1711111111000
+      },
+      "players": {
+        "bot1": {
+          "nick": "💀A",
+          "color": "#4a4a5a",
+          "textColor": "#888899",
+          "isHost": false,
+          "isBot": true
+        }
+      },
+      "mapData": [
+        [
+          { "v": 0, "owner": null, "errors": [], "maybe": [], "certain": false },
+          { "v": 0, "owner": null, "errors": [], "maybe": [], "certain": false },
+          { "v": 0, "owner": null, "errors": [], "maybe": [], "certain": false },
+          { "v": 0, "owner": null, "errors": [], "maybe": [], "certain": false }
+        ],
+        [
+          { "v": 0, "owner": null, "errors": [], "maybe": [], "certain": false },
+          { "v": 0, "owner": null, "errors": [], "maybe": [], "certain": false },
+          { "v": 0, "owner": null, "errors": [], "maybe": [], "certain": false },
+          { "v": 0, "owner": null, "errors": [], "maybe": [], "certain": false }
+        ],
+        [
+          { "v": 0, "owner": null, "errors": [], "maybe": [], "certain": false },
+          { "v": 0, "owner": null, "errors": [], "maybe": [], "certain": false },
+          { "v": 0, "owner": null, "errors": [], "maybe": [], "certain": false },
+          { "v": 0, "owner": null, "errors": [], "maybe": [], "certain": false }
+        ],
+        [
+          { "v": 0, "owner": null, "errors": [], "maybe": [], "certain": false },
+          { "v": 0, "owner": null, "errors": [], "maybe": [], "certain": false },
+          { "v": 0, "owner": null, "errors": [], "maybe": [], "certain": false },
+          { "v": 0, "owner": null, "errors": [], "maybe": [], "certain": false }
+        ],
+        [
+          { "v": 0, "owner": null, "errors": [], "maybe": [], "certain": false },
+          { "v": 0, "owner": null, "errors": [], "maybe": [], "certain": false },
+          { "v": 0, "owner": null, "errors": [], "maybe": [], "certain": false },
+          { "v": 0, "owner": null, "errors": [], "maybe": [], "certain": false }
+        ],
+        [
+          { "v": 0, "owner": null, "errors": [], "maybe": [], "certain": false },
+          { "v": 0, "owner": null, "errors": [], "maybe": [], "certain": false },
+          { "v": 0, "owner": null, "errors": [], "maybe": [], "certain": false },
+          { "v": 0, "owner": null, "errors": [], "maybe": [], "certain": false }
+        ],
+        [
+          { "v": 0, "owner": null, "errors": [], "maybe": [], "certain": false },
+          { "v": 0, "owner": null, "errors": [], "maybe": [], "certain": false },
+          { "v": 0, "owner": null, "errors": [], "maybe": [], "certain": false },
+          { "v": 0, "owner": null, "errors": [], "maybe": [], "certain": false }
+        ],
+        [
+          { "v": 0, "owner": null, "errors": [], "maybe": [], "certain": false },
+          { "v": 0, "owner": null, "errors": [], "maybe": [], "certain": false },
+          { "v": 0, "owner": null, "errors": [], "maybe": [], "certain": false },
+          { "v": 0, "owner": null, "errors": [], "maybe": [], "certain": false }
+        ],
+        [
+          { "v": 0, "owner": null, "errors": [], "maybe": [], "certain": false },
+          { "v": 0, "owner": null, "errors": [], "maybe": [], "certain": false },
+          { "v": 0, "owner": null, "errors": [], "maybe": [], "certain": false },
+          { "v": 0, "owner": null, "errors": [], "maybe": [], "certain": false }
+        ],
+        [
+          { "v": 0, "owner": null, "errors": [], "maybe": [], "certain": false },
+          { "v": 0, "owner": null, "errors": [], "maybe": [], "certain": false },
+          { "v": 0, "owner": null, "errors": [], "maybe": [], "certain": false },
+          { "v": 0, "owner": null, "errors": [], "maybe": [], "certain": false }
+        ]
+      ],
+      "chat": {
+        "msg1": {
+          "nick": "System",
+          "msg": "Welcome to Artale_RJPQ_oojump!",
+          "time": 1711111111000
+        }
+      }
+    }
+  },
+  "stats": {
+    "activeRooms": 0,
+    "onlineUsers": 0
+  }
+}

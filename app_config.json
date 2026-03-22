@@ -1,0 +1,83 @@
+{
+  "appInfo": {
+    "title": "Artale_RJPQ_oojump",
+    "version": "2.0.0",
+    "author": "oo_jump",
+    "description": "Romeo and Juliet Party Quest 多人即時同步標記輔助工具"
+  },
+  "gameSettings": {
+    "floorCount": 10,
+    "cellsPerFloor": 4,
+    "maxPlayers": 4,
+    "idleTimeoutMs": 3600000,
+    "defaultColors": [
+      "#7B241C",
+      "#A04000",
+      "#1D8348",
+      "#1B4F72"
+    ],
+    "gridSequences": [
+      {
+        "id": "1234",
+        "label": "由左至右 1234"
+      },
+      {
+        "id": "4321",
+        "label": "由右至左 4321"
+      },
+      {
+        "id": "none",
+        "label": "不顯示"
+      }
+    ]
+  },
+  "uiStrings": {
+    "zh-TW": {
+      "lobby": {
+        "title": "⚔️ Artale_RJPQ_v2.0",
+        "playerSection": "玩家設定",
+        "nickPlaceholder": "輸入暱稱（中英數，最多10字）...",
+        "createRoom": "🏠 建立房間",
+        "joinRoom": "🌍 加入房間",
+        "advanced": "⚙️ 進階選項",
+        "roomIdLabel": "房號 (Room ID)",
+        "passwordLabel": "密碼 (如有)",
+        "statsTitle": "🌐 伺服器即時狀態"
+      },
+      "room": {
+        "infoSection": "房間資訊",
+        "memberSection": "房間成員（💀為待補）",
+        "logSection": "📋 系統日誌",
+        "recordLabel": "你的活路紀錄",
+        "mapTitle": "⬆ 樓梯地圖（L1 → L10）",
+        "chatTitle": "💬 聊天室",
+        "instrLeft": "🖱️ 標記正確 (左鍵/單擊)",
+        "instrRight": "🖱️ 標記死路 (右鍵/雙擊)",
+        "instrMobile": "📱 手機：單點=正確 / 雙擊=死路",
+        "instrBot": "💀 灰色虛線：系統替補Bot",
+        "instrMaybe": "🟣 紫框：推算可能 / 🟡 金框：唯一確定"
+      },
+      "buttons": {
+        "create": "✨ 建立房間",
+        "join": "🔑 加入房間",
+        "leave": "🚪 離開房間",
+        "rebuild": "🔨 重建房間",
+        "reset": "🗑️ 清空標記",
+        "copy": "📋 複製",
+        "send": "發送",
+        "close": "關閉",
+        "confirm": "確認"
+      }
+    }
+  },
+  "firebaseConfig": {
+    "apiKey": "AIzaSyBlyY4wFOKHnI9c2oEYO5Khh8Xo-Pba-ZE",
+    "authDomain": "auto-rjpq.firebaseapp.com",
+    "databaseURL": "https://auto-rjpq-default-rtdb.firebaseio.com",
+    "projectId": "auto-rjpq",
+    "storageBucket": "auto-rjpq.firebasestorage.app",
+    "messagingSenderId": "737332564229",
+    "appId": "1:737332564229:web:19489f6aa5cb183e91676c",
+    "measurementId": "G-9VECGGNYNF"
+  }
+}

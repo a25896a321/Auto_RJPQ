@@ -1,0 +1,576 @@
+import { initializeApp } from "firebase/app";
+import { getDatabase, ref, set, get, onValue, update, onDisconnect, push, serverTimestamp, remove } from "firebase/database";
+
+let config = null;
+let db = null;
+let roomId = null;
+let myUid = null;
+let myInfo = { nick: '', color: '#7B241C', textColor: '#FFFFFF', isHost: false };
+let roomData = null;
+let options = { auto: true, members: true, chat: true, seq: '1234' };
+let idleTimer = null;
+
+const BOT_NAMES = ['💀A', '💀B', '💀C'];
+
+// ===== INIT =====
+async function init() {
+    try {
+        const resp = await fetch('app_config.json');
+        config = await resp.json();
+        setupUIStrings();
+
+        // Firebase Init
+        const app = initializeApp(config.firebaseConfig);
+        db = getDatabase(app);
+
+        // Global Stats
+        onValue(ref(db, 'stats/global'), (snap) => {
+            const val = snap.val();
+            if (val) {
+                document.getElementById('stat-rooms').textContent = val.activeRooms || 0;
+                document.getElementById('stat-users').textContent = val.onlineUsers || 0;
+            }
+        });
+
+        // Local state UID
+        myUid = localStorage.getItem('rjpq_uid') || 'u' + Math.random().toString(36).substring(2, 9);
+        localStorage.setItem('rjpq_uid', myUid);
+
+        // Sync sequences in dropdown
+        const seqSel = document.getElementById('cr-seq');
+        config.gameSettings.gridSequences.forEach(s => {
+            const opt = document.createElement('option');
+            opt.value = s.id; opt.textContent = s.label;
+            if (s.id === '1234') opt.selected = true;
+            seqSel.appendChild(opt);
+        });
+
+        // Color syncing
+        document.getElementById('lb-col-inp').addEventListener('input', e => {
+            document.getElementById('lb-col-sw').style.background = e.target.value;
+            myInfo.color = e.target.value;
+        });
+        document.getElementById('lb-txt-inp').addEventListener('input', e => {
+            document.getElementById('lb-txt-sw').style.background = e.target.value;
+            myInfo.textColor = e.target.value;
+        });
+
+        // Check hash for auto-join
+        const hash = window.location.hash.substring(1);
+        if (hash && /^\d{8}$/.test(hash)) {
+            document.getElementById('jo-id').value = hash;
+            log(`已偵測到邀請連結(房號: ${hash})，請輸入暱稱直接加入。`, 'warn');
+        }
+
+        log('系統已就緒，請建立或加入房間。', 'ok');
+    } catch (e) {
+        console.error(e);
+        log('設定檔加載失敗，請檢查 app_config.json', 'error');
+    }
+}
+
+function setupUIStrings() {
+    const s = config.uiStrings['zh-TW'];
+    document.getElementById('txt-lobby-title').textContent = s.lobby.title;
+    document.getElementById('txt-player-section').textContent = s.lobby.playerSection;
+    document.getElementById('lb-nick').placeholder = s.lobby.nickPlaceholder;
+    document.getElementById('txt-create-room').textContent = s.lobby.createRoom;
+    document.getElementById('txt-join-room').textContent = s.lobby.joinRoom;
+    document.getElementById('txt-btn-create').textContent = s.buttons.create;
+    document.getElementById('txt-btn-join').textContent = s.buttons.join;
+    document.getElementById('txt-stats-title').textContent = s.lobby.statsTitle;
+}
+
+// ===== CORE ACTIONS =====
+async function doCreate() {
+    log('--- 開始建立房間流程 ---', 'info');
+    try {
+        // [STEP 1] 讀取基本資料
+        log('[STEP 1] 正在抓取輸入欄位...', 'info');
+        const elNick = document.getElementById('lb-nick');
+        const elName = document.getElementById('cr-name');
+        const elPw = document.getElementById('cr-pw');
+        const elCol = document.getElementById('lb-col-inp');
+        const elTxt = document.getElementById('lb-txt-inp');
+
+        if (!elNick || !elName || !elCol) {
+            log('錯誤: 找不到 DOM 元素，請檢查 index.html', 'error');
+            throw new Error('UI 元素遺失');
+        }
+
+        const nick = elNick.value.trim() || '未命名' + Math.floor(Math.random() * 100);
+        const newRoomId = Math.floor(10000000 + Math.random() * 90000000).toString();
+
+        log(`[STEP 2] 使用者: ${nick}, 預計房號: ${newRoomId}`, 'info');
+
+        // 確保 UID 已產出
+        if (!myUid) {
+            log('錯誤: myUid 為空，LocalStorage 可能受限', 'error');
+            throw new Error('UID 未初始化');
+        }
+
+        myInfo = {
+            nick,
+            color: elCol.value,
+            textColor: elTxt.value,
+            isHost: true
+        };
+
+        // [STEP 2] 檢查 Firebase 是否就緒
+        log('[STEP 3] 檢查 Firebase 連線狀態...', 'info');
+        if (!db) {
+            log('錯誤: 資料庫 (db) 物件為 null', 'error');
+            throw new Error('Firebase 連線未建立');
+        }
+
+        // [STEP 3] 封裝房間狀態
+        log('[STEP 4] 封裝房間 JSON 數據...', 'info');
+        const mapData = Array(10).fill(null).map(() =>
+            Array(4).fill(null).map(() => ({ v: 0, owner: null, errors: [], maybe: [], certain: false }))
+        );
+
+        const roomState = {
+            config: {
+                name: elName.value.trim() || '未命名的房間',
+                password: elPw.value.trim(),
+                options: {
+                    auto: document.getElementById('cr-auto').checked,
+                    members: document.getElementById('cr-members').checked,
+                    chat: document.getElementById('cr-chat').checked,
+                    seq: document.getElementById('cr-seq').value
+                },
+                createdAt: serverTimestamp(),
+                lastActive: serverTimestamp(),
+                hostId: myUid
+            },
+            players: {
+                [myUid]: myInfo
+            },
+            mapData: mapData
+        };
+
+        log('[STEP 5] 正在向 Firebase [set] 發送請求...', 'warn');
+
+        // [STEP 4] 異步發送並加上 10 秒超時監控
+        const writePromise = set(ref(db, `rooms/${newRoomId}`), roomState);
+        const timeoutPromise = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Firebase 延遲過久，請檢查 Rules 或網路')), 10000)
+        );
+
+        await Promise.race([writePromise, timeoutPromise]);
+
+        log('[STEP 6] Firebase 回傳 Success!', 'ok');
+        log('進入房間串流...', 'ok');
+
+        joinRoomStream(newRoomId);
+
+    } catch (err) {
+        console.error('DEBUG - doCreate Failed:', err);
+        log(`!!! 建立失敗 [${err.name}]: ${err.message}`, 'error');
+    }
+}
+
+async function doJoin() {
+    const targetRoomId = document.getElementById('jo-id').value.trim();
+    const pw = document.getElementById('jo-pw').value.trim();
+    if (!/^\d{8}$/.test(targetRoomId)) return alert('房號應為 8 位數字。');
+
+    const nick = document.getElementById('lb-nick').value.trim() || '未命名' + Math.floor(Math.random() * 100);
+    myInfo = { nick, color: document.getElementById('lb-col-inp').value, textColor: document.getElementById('lb-txt-inp').value, isHost: false };
+
+    log('正在加入房間...', 'info');
+    try {
+        const snapshot = await get(ref(db, `rooms/${targetRoomId}`));
+        if (!snapshot.exists()) return alert('房間不存在。');
+
+        const data = snapshot.val();
+        if (data.config.password && data.config.password !== pw) return alert('密碼錯誤。');
+
+        const playerArray = Object.values(data.players || {});
+        if (playerArray.length >= 4) return alert('房間已滿。');
+        if (playerArray.some(p => p.nick === nick)) return alert('暱稱重複。');
+
+        await set(ref(db, `rooms/${targetRoomId}/players/${myUid}`), myInfo);
+        joinRoomStream(targetRoomId);
+    } catch (err) {
+        log('加入失敗: ' + err.message, 'error');
+    }
+}
+
+function joinRoomStream(rid) {
+    roomId = rid;
+    window.location.hash = rid;
+    document.getElementById('screen-lobby').style.display = 'none';
+    document.getElementById('screen-room').style.display = 'flex';
+    document.getElementById('rid-box').textContent = `房號: ${rid}`;
+
+    // Subscribe
+    onValue(ref(db, `rooms/${rid}`), (snap) => {
+        if (!snap.exists()) {
+            alert('房間已被刪除或失效。');
+            leaveRoom();
+            return;
+        }
+        roomData = snap.val();
+        options = roomData.config.options;
+        renderRoom();
+        resetIdleTimer();
+    });
+
+    // Auto remove on disconnect
+    onDisconnect(ref(db, `rooms/${rid}/players/${myUid}`)).remove();
+
+    log(`連線成功！房號: ${rid}`, 'ok');
+}
+
+function renderRoom() {
+    const players = Object.values(roomData.players || {});
+    const isHost = roomData.config.hostId === myUid;
+    myInfo.isHost = isHost;
+
+    // Update labels
+    document.getElementById('room-name-display').textContent = `房間: ${roomData.config.name || '未命名'}`;
+    document.getElementById('room-badge').textContent = `成員: ${players.length}/4`;
+    document.getElementById('btn-rebuild').style.display = isHost ? 'inline-flex' : 'none';
+    document.getElementById('btn-reset').style.display = isHost ? 'inline-flex' : 'none';
+    document.getElementById('btn-edit-pw').style.display = isHost ? 'inline-flex' : 'none';
+    document.getElementById('chat-sec').style.display = options.chat ? 'block' : 'none';
+    document.getElementById('members-sec').style.display = options.members ? 'block' : 'none';
+
+    // Password view
+    if (roomData.config.password) {
+        document.getElementById('pw-row').style.display = 'grid';
+        document.getElementById('pw-box').textContent = `密碼: ${roomData.config.password}`;
+    } else {
+        document.getElementById('pw-row').style.display = isHost ? 'grid' : 'none';
+        document.getElementById('pw-box').textContent = isHost ? '密碼: (未設定)' : '';
+    }
+
+    renderPlayerList(roomData.players || {});
+    renderGrid();
+    updatePathRecord();
+}
+
+function renderPlayerList(playersObj) {
+    const plist = document.getElementById('plist');
+    plist.innerHTML = '';
+    const players = Object.entries(playersObj);
+    const isHost = roomData.config.hostId === myUid;
+
+    // Real players
+    players.forEach(([uid, p]) => {
+        const span = document.createElement('span');
+        span.className = 'mtag';
+        span.style.color = p.color;
+        span.style.background = p.color + '22';
+        span.style.borderColor = p.color + '66';
+        span.style.paddingRight = (isHost && uid !== myUid) ? '4px' : '10px';
+
+        let html = (p.isHost ? '👑 ' : '🙎‍♂️ ') + p.nick;
+        if (isHost && uid !== myUid) {
+            html += ` <button onclick="app.kickPlayer('${uid}', '${p.nick}')" style="background:none; border:none; color:#ef4444; cursor:pointer; font-weight:bold; margin-left:5px;">[X]</button>`;
+        }
+        span.innerHTML = html;
+        plist.appendChild(span);
+    });
+
+    // Bots
+    const botCount = 4 - players.length;
+    for (let i = 0; i < botCount; i++) {
+        const span = document.createElement('span');
+        span.className = 'mtag';
+        span.style.opacity = '0.4';
+        span.style.fontStyle = 'italic';
+        span.textContent = '💀 ' + BOT_NAMES[i];
+        plist.appendChild(span);
+    }
+}
+
+function renderGrid() {
+    const container = document.getElementById('map-grid');
+    container.innerHTML = '';
+
+    for (let f = 0; f < 10; f++) {
+        const floor = roomData.mapData[f];
+        const row = document.createElement('div');
+        row.className = 'floor-row';
+        row.innerHTML = `<div class="floor-label">L${10 - f}</div>`;
+
+        const grid = document.createElement('div');
+        grid.className = 'door-grid';
+
+        floor.forEach((cell, d) => {
+            const door = document.createElement('div');
+            door.id = `door-${f}-${d}`;
+            door.className = 'door';
+
+            // Background sequence hint
+            let seq = '';
+            if (options.seq === '1234') seq = (d + 1);
+            else if (options.seq === '4321') seq = (4 - d);
+
+            door.innerHTML = `<div class="door-seq">${seq}</div><div class="door-icon"></div><div class="door-owner"></div>`;
+
+            const icon = door.querySelector('.door-icon');
+            const owner = door.querySelector('.door-owner');
+
+            if (cell.v === 1) {
+                door.classList.add('is-correct');
+                door.style.background = `linear-gradient(135deg, ${cell.ownerColor || '#888'}, #000)`;
+                icon.textContent = 'O'; icon.style.color = '#fff';
+                owner.textContent = cell.owner; owner.style.color = '#fff';
+            } else {
+                if (cell.certain) {
+                    door.classList.add('is-certain');
+                    icon.textContent = '★'; icon.style.color = config?.gameSettings?.defaultColors?.[0] || '#f59e0b';
+                    owner.textContent = '僅剩此格';
+                } else if (cell.errors && cell.errors.includes(myInfo.nick)) {
+                    door.classList.add('is-error');
+                    icon.textContent = '✗'; icon.style.color = '#ef4444';
+                    if (cell.maybe && cell.maybe.length > 0) owner.textContent = '(' + cell.maybe.join('/') + ')';
+                } else if (cell.maybe && cell.maybe.length > 0) {
+                    icon.textContent = '?'; icon.style.color = '#8b5cf6';
+                    owner.textContent = '(' + cell.maybe.join('/') + ')';
+                }
+            }
+
+            door.onclick = () => handleCellClick(f, d, 'left');
+            door.oncontextmenu = (e) => { e.preventDefault(); handleCellClick(f, d, 'right'); };
+
+            grid.appendChild(door);
+        });
+        row.appendChild(grid);
+        container.appendChild(row);
+    }
+}
+
+async function handleCellClick(f, d, btn) {
+    if (!roomId) return;
+    const cell = roomData.mapData[f][d];
+    const updates = {};
+    const path = `rooms/${roomId}/mapData/${f}`;
+
+    if (btn === 'left') {
+        if (cell.v === 1 && cell.owner === myInfo.nick) {
+            // Deselect
+            updates[`${d}/v`] = 0;
+            updates[`${d}/owner`] = null;
+            updates[`${d}/ownerColor`] = null;
+            // Clean up errors auto-marked for others
+            if (options.auto) {
+                for (let i = 0; i < 4; i++) {
+                    if (i !== d) {
+                        const otherErrors = roomData.mapData[f][i].errors || [];
+                        updates[`${i}/errors`] = otherErrors.filter(e => e !== myInfo.nick);
+                    }
+                }
+            }
+            log(`取消標記 L${10 - f}`, 'warn');
+        } else if (cell.v === 0) {
+            // Select as Correct (remove previous selection from this player on this floor)
+            for (let i = 0; i < 4; i++) {
+                if (roomData.mapData[f][i].owner === myInfo.nick) {
+                    updates[`${i}/v`] = 0;
+                    updates[`${i}/owner`] = null;
+                    updates[`${i}/ownerColor`] = null;
+                }
+            }
+            updates[`${d}/v`] = 1;
+            updates[`${d}/owner`] = myInfo.nick;
+            updates[`${d}/ownerColor`] = myInfo.color;
+
+            // Auto mark others as errors for this player
+            if (options.auto) {
+                for (let i = 0; i < 4; i++) {
+                    if (i !== d) {
+                        let eList = roomData.mapData[f][i].errors || [];
+                        if (!eList.includes(myInfo.nick)) {
+                            updates[`${i}/errors`] = [...eList, myInfo.nick];
+                        }
+                    }
+                }
+            }
+            log(`標記 L${10 - f} 正確：第${d + 1}格`, 'ok');
+        }
+    } else if (btn === 'right') {
+        if (cell.v === 1) return;
+        let eList = cell.errors || [];
+        if (eList.includes(myInfo.nick)) {
+            updates[`${d}/errors`] = eList.filter(e => e !== myInfo.nick);
+        } else {
+            if (eList.length >= 4) return; // Should not happen
+            updates[`${d}/errors`] = [...eList, myInfo.nick];
+        }
+    }
+
+    if (Object.keys(updates).length > 0) {
+        await update(ref(db, path), updates);
+        if (options.auto) recalcFloorMaybe(f);
+        updateLastActive();
+    }
+}
+
+async function recalcFloorMaybe(f) {
+    const floor = roomData.mapData[f];
+    const playersInRoom = Object.values(roomData.players).map(p => p.nick);
+    const botCount = 4 - playersInRoom.length;
+    const allPlayers = [...playersInRoom, ...BOT_NAMES.slice(0, botCount)];
+
+    // Logic similar to worker.js but pushing back to Firebase
+    const passOwners = new Set();
+    floor.forEach(c => { if (c.v === 1 && c.owner) passOwners.add(c.owner); });
+
+    const activePlayers = allPlayers.filter(p => !passOwners.has(p));
+    const unpassedIdx = [];
+    floor.forEach((c, i) => { if (c.v !== 1) unpassedIdx.push(i); });
+
+    if (activePlayers.length === 0 || unpassedIdx.length === 0) return;
+
+    // Build possibility matrix
+    const possible = {};
+    activePlayers.forEach(p => {
+        possible[p] = {};
+        unpassedIdx.forEach(d => {
+            possible[p][d] = !(floor[d].errors || []).includes(p);
+        });
+    });
+
+    // Simple resolution logic
+    let changed = true;
+    while (changed) {
+        changed = false;
+        // If a door has only one possible player, that player is assigned and removed from other doors
+        unpassedIdx.forEach(d => {
+            const potential = activePlayers.filter(p => possible[p][d]);
+            if (potential.length === 1) {
+                const winner = potential[0];
+                unpassedIdx.forEach(d2 => {
+                    if (d2 !== d && possible[winner][d2]) { possible[winner][d2] = false; changed = true; }
+                });
+            }
+        });
+        // If a player has only one possible door, that door is assigned and other players removed
+        activePlayers.forEach(p => {
+            const potentialDoors = unpassedIdx.filter(d => possible[p][d]);
+            if (potentialDoors.length === 1) {
+                const winnerDoor = potentialDoors[0];
+                activePlayers.forEach(p2 => {
+                    if (p2 !== p && possible[p2][winnerDoor]) { possible[p2][winnerDoor] = false; changed = true; }
+                });
+            }
+        });
+    }
+
+    const updates = {};
+    unpassedIdx.forEach(d => {
+        const pps = activePlayers.filter(p => possible[p][d]);
+        updates[`${d}/maybe`] = pps;
+        updates[`${d}/certain`] = pps.length === 1;
+    });
+
+    await update(ref(db, `rooms/${roomId}/mapData/${f}`), updates);
+}
+
+function updateLastActive() {
+    update(ref(db, `rooms/${roomId}/config`), { lastActive: serverTimestamp() });
+}
+
+function resetIdleTimer() {
+    if (idleTimer) clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => {
+        alert('閒置過久，請重新創建。');
+        leaveRoom();
+    }, config.gameSettings.idleTimeoutMs);
+}
+
+function leaveRoom() {
+    if (roomId) {
+        remove(ref(db, `rooms/${roomId}/players/${myUid}`));
+        roomId = null;
+        window.location.hash = '';
+        document.getElementById('screen-lobby').style.display = 'flex';
+        document.getElementById('screen-room').style.display = 'none';
+        log('已斷開連線', 'warn');
+    }
+}
+
+async function rebuildRoom() {
+    if (!confirm('重建房間將清空所有數據，確定嗎？')) return;
+    const initialMap = Array(10).fill(null).map(() =>
+        Array(4).fill(null).map(() => ({ v: 0, owner: null, errors: [], maybe: [], certain: false }))
+    );
+    await update(ref(db, `rooms/${roomId}`), { mapData: initialMap });
+    log('房間已重建', 'warn');
+}
+
+async function resetAll() {
+    if (!confirm('確定清空所有標記？')) return;
+    rebuildRoom();
+}
+
+// ===== UTILS =====
+function log(msg, type = 'info') {
+    const p = document.getElementById('log-panel');
+    const entry = document.createElement('div');
+    entry.style.color = type === 'ok' ? '#00ffaa' : type === 'warn' ? '#ffcc00' : type === 'error' ? '#ff4444' : '#ffffff';
+    entry.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+    p.appendChild(entry);
+    p.scrollTop = p.scrollHeight;
+}
+
+function updatePathRecord() {
+    const el = document.getElementById('path-record');
+    const path = [];
+    for (let f = 9; f >= 0; f--) {
+        const floor = roomData.mapData[f];
+        let found = '_';
+        floor.forEach((cell, idx) => {
+            if (cell.v === 1) found = (idx + 1);
+        });
+        path.push(found);
+    }
+    // format: XXX-XXX-XXX-X
+    const formatted = path.slice(0, 3).join('') + '-' + path.slice(3, 6).join('') + '-' + path.slice(6, 9).join('') + '-' + path[9];
+    el.textContent = formatted;
+}
+
+// Define on window for HTML onclicks
+window.app = {
+    doCreate, doJoin, leaveRoom, rebuildRoom, resetAll,
+    copyId: () => { navigator.clipboard.writeText(roomId); toast('房號已複製'); },
+    copyPw: () => { navigator.clipboard.writeText(roomData.config.password); toast('密碼已複製'); },
+    copyInvite: () => { navigator.clipboard.writeText(window.location.href); toast('邀請連結已複製'); },
+    copyPath: () => { navigator.clipboard.writeText(document.getElementById('path-record').textContent); toast('活路紀錄已複製'); },
+    sendChat: () => {
+        const inp = document.getElementById('chat-inp');
+        if (!inp.value.trim()) return;
+        push(ref(db, `rooms/${roomId}/chat`), {
+            nick: myInfo.nick,
+            color: myInfo.color,
+            msg: inp.value.trim(),
+            time: serverTimestamp()
+        });
+        inp.value = '';
+    },
+    openEditNick: () => { alert('請重新加入房間以修改（功能開發中）'); },
+    editPassword: async () => {
+        const newPw = prompt('請輸入新密碼 (留空則取消密碼):', roomData.config.password || '');
+        if (newPw === null) return;
+        await update(ref(db, `rooms/${roomId}/config`), { password: newPw.trim() });
+        log('密碼已更新', 'ok');
+    },
+    kickPlayer: async (uid, nick) => {
+        if (!confirm(`確定要將 ${nick} 移出房間嗎？`)) return;
+        await remove(ref(db, `rooms/${roomId}/players/${uid}`));
+        log(`已將 ${nick} 移出房間`, 'warn');
+    }
+};
+
+function toast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 2000);
+}
+
+init();
