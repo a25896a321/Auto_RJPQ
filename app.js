@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase/app";
-import { getDatabase, ref, set, get, onValue, update, onDisconnect, push, serverTimestamp, remove, increment, runTransaction } from "firebase/database";
+import { getDatabase, ref, set, get, onValue, update, onDisconnect, push, serverTimestamp, remove, runTransaction } from "firebase/database";
 
 let config = null;
 let db = null;
@@ -23,18 +23,24 @@ async function init() {
         const app = initializeApp(config.firebaseConfig);
         db = getDatabase(app);
 
-        // Global Stats
-        onValue(ref(db, 'stats/global'), (snap) => {
-            const val = snap.val();
-            if (val) {
-                document.getElementById('stat-rooms').textContent = val.activeRooms || 0;
-                document.getElementById('stat-users').textContent = val.onlineUsers || 0;
-            }
+        // Count active rooms in real-time
+        onValue(ref(db, 'rooms'), (snap) => {
+            document.getElementById('stat-rooms').textContent = snap.numChildren();
         });
 
         // Local state UID
         myUid = localStorage.getItem('rjpq_uid') || 'u' + Math.random().toString(36).substring(2, 9);
         localStorage.setItem('rjpq_uid', myUid);
+
+        // Presence logic: Global online status
+        const presenceRef = ref(db, `presence/${myUid}`);
+        set(presenceRef, true);
+        onDisconnect(presenceRef).remove();
+
+        // Listen for global online users
+        onValue(ref(db, 'presence'), (snap) => {
+            document.getElementById('stat-users').textContent = snap.numChildren();
+        });
 
         // Sync sequences in dropdown
         const seqSel = document.getElementById('cr-seq');
@@ -117,10 +123,6 @@ async function doCreate() {
     log('正在建立房間...', 'info');
     try {
         await set(ref(db, `rooms/${newRoomId}`), roomState);
-        await update(ref(db, 'stats/global'), {
-            activeRooms: increment(1),
-            onlineUsers: increment(1)
-        });
         joinRoomStream(newRoomId);
     } catch (err) {
         log('建立失敗: ' + err.message, 'error');
@@ -180,9 +182,6 @@ async function doJoin() {
         if (playerArray.some(p => p.nick === nick)) return alert('暱稱重複。');
 
         await set(ref(db, `rooms/${targetRoomId}/players/${myUid}`), myInfo);
-        await update(ref(db, 'stats/global'), {
-            onlineUsers: increment(1)
-        });
         joinRoomStream(targetRoomId);
     } catch (err) {
         log('加入失敗: ' + err.message, 'error');
@@ -229,7 +228,6 @@ function joinRoomStream(rid) {
 
     // Auto remove on disconnect
     onDisconnect(ref(db, `rooms/${rid}/players/${myUid}`)).remove();
-    onDisconnect(ref(db, 'stats/global/onlineUsers')).set(increment(-1));
 
     log(`連線成功！房號: ${rid}`, 'ok');
 }
@@ -505,16 +503,8 @@ function resetIdleTimer() {
 function leaveRoom() {
     if (roomId) {
         remove(ref(db, `rooms/${roomId}/players/${myUid}`));
-        update(ref(db, 'stats/global'), {
-            onlineUsers: increment(-1)
-        });
-        
-        // If it was the last person, decrement activeRooms (approximate)
-        if (roomData && Object.keys(roomData.players || {}).length <= 1) {
-            update(ref(db, 'stats/global'), {
-                activeRooms: increment(-1)
-            });
-        }
+        // If it was the last person, decrement activeRooms (approximate) - now handled by node count
+
 
         roomId = null;
         window.location.hash = '';
@@ -622,12 +612,9 @@ window.app = {
             const rid = roomId;
             // Leave room and rejoin
             remove(ref(db, `rooms/${rid}/players/${myUid}`));
-            update(ref(db, 'stats/global'), { onlineUsers: increment(-1) });
-            
             // Re-join logic (skipping PW check by directly setting)
             setTimeout(async () => {
                 await set(ref(db, `rooms/${rid}/players/${myUid}`), myInfo);
-                update(ref(db, 'stats/global'), { onlineUsers: increment(1) });
                 joinRoomStream(rid);
             }, 500);
         }
