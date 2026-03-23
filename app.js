@@ -189,16 +189,17 @@ async function doJoin() {
 
         const nick = document.getElementById('lb-nick').value.trim() || ('未命名' + (playerArray.length + 1));
         const colorList = config.gameSettings.defaultColors;
-        const usedColors = playerArray.map(p => p.color);
-        let color = document.getElementById('lb-col-inp').value;
+        const usedColors = playerArray.map(p => p.color.toUpperCase());
+        let color = document.getElementById('lb-col-inp').value.toUpperCase();
 
-        // If user kept the initial default color (#7B241C), auto-assign a fresh one
-        // If they chose a color that someone else is using, also auto-assign to avoid conflict
-        if (color.toUpperCase() === colorList[0].toUpperCase() || usedColors.includes(color)) {
-            const nextBest = colorList.find(c => !usedColors.includes(c));
+        // High-precision color conflict resolution:
+        // 1. If user didn't change default red (colorList[0])
+        // 2. OR if user's choice is already taken by someone in the room
+        if (color === colorList[0].toUpperCase() || usedColors.includes(color)) {
+            const nextBest = colorList.find(c => !usedColors.includes(c.toUpperCase()));
             if (nextBest) {
-                color = nextBest;
-                // Sync back to lobby inputs so user sees their actual assigned color
+                color = nextBest.toUpperCase();
+                // Update UI right away so it doesn't revert
                 document.getElementById('lb-col-inp').value = color;
                 document.getElementById('lb-col-sw').style.background = color;
             }
@@ -527,8 +528,15 @@ async function recalcFloorMaybe(f) {
     const updates = {};
     unpassedIdx.forEach(d => {
         const pps = activePlayers.filter(p => possible[p][d]);
-        updates[`${d}/maybe`] = pps;
-        updates[`${d}/certain`] = pps.length === 1;
+        // If all active players are possible, it's non-informative, so clear it.
+        // Also if nobody is possible (shouldn't happen with correct logic), clear it.
+        if (pps.length === activePlayers.length || pps.length === 0) {
+            updates[`${d}/maybe`] = [];
+            updates[`${d}/certain`] = false;
+        } else {
+            updates[`${d}/maybe`] = pps;
+            updates[`${d}/certain`] = pps.length === 1;
+        }
     });
 
     await update(ref(db, `rooms/${roomId}/mapData/${f}`), updates);
