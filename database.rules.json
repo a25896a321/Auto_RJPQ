@@ -1,0 +1,20 @@
+{
+  "rules": {
+    "rooms": {
+      ".read": "true",
+      "$rid": {
+        ".write": "!data.exists() || data.child('players').hasChild('YOUR_UID_PLACEHOLDER') || auth != null",
+        "config": {
+          "password": {
+             ".read": "false"
+          }
+        },
+        "players": {
+          "$uid": {
+            ".write": "!data.exists() || !newData.exists()"
+          }
+        }
+      }
+    }
+  }
+}

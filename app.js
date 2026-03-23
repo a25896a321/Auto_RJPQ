@@ -23,24 +23,21 @@ async function init() {
         const app = initializeApp(config.firebaseConfig);
         db = getDatabase(app);
 
-        // Count active rooms in real-time
+        // Real-time server stats: Count rooms and total players from the tree
         onValue(ref(db, 'rooms'), (snap) => {
-            document.getElementById('stat-rooms').textContent = snap.numChildren();
+            const rooms = snap.val() || {};
+            const roomCount = Object.keys(rooms).length;
+            let totalPlayers = 0;
+            Object.values(rooms).forEach(r => {
+                if (r.players) totalPlayers += Object.keys(r.players).length;
+            });
+            document.getElementById('stat-rooms').textContent = roomCount;
+            document.getElementById('stat-users').textContent = totalPlayers;
         });
 
         // Local state UID
         myUid = localStorage.getItem('rjpq_uid') || 'u' + Math.random().toString(36).substring(2, 9);
         localStorage.setItem('rjpq_uid', myUid);
-
-        // Presence logic: Global online status
-        const presenceRef = ref(db, `presence/${myUid}`);
-        set(presenceRef, true);
-        onDisconnect(presenceRef).remove();
-
-        // Listen for global online users
-        onValue(ref(db, 'presence'), (snap) => {
-            document.getElementById('stat-users').textContent = snap.numChildren();
-        });
 
         // Sync sequences in dropdown
         const seqSel = document.getElementById('cr-seq');
@@ -529,9 +526,17 @@ function resetIdleTimer() {
 
 function leaveRoom() {
     if (roomId) {
-        remove(ref(db, `rooms/${roomId}/players/${myUid}`));
-        // If it was the last person, decrement activeRooms (approximate) - now handled by node count
-
+        // Need to check players count before leaving
+        const players = roomData ? roomData.players : {};
+        const playerKeys = Object.keys(players || {});
+        
+        if (playerKeys.length <= 1 && players[myUid]) {
+            // I am the last player
+            remove(ref(db, `rooms/${roomId}`));
+        } else {
+            // Just remove myself
+            remove(ref(db, `rooms/${roomId}/players/${myUid}`));
+        }
 
         roomId = null;
         window.location.hash = '';
