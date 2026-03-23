@@ -50,7 +50,7 @@
         "instrLeft": "🖱️ 標記正確 (左鍵/單擊)",
         "instrRight": "🖱️ 標記死路 (右鍵/雙擊)",
         "instrMobile": "📱 手機：單點=正確 / 雙擊=死路",
-        "instrBot": "💀 灰色虛線：系統替補Bot",
+        "instrBot": "💀 ：系統替補Bot",
         "instrMaybe": "🟣 紫框：推算可能 / 🟡 金框：唯一確定"
       },
       "buttons": {

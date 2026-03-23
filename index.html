@@ -154,13 +154,29 @@
                 <button class="btn btn-gld" id="btn-edit-pw" style="display: none;" onclick="app.editPassword()"
                     title="編輯密碼">✏️</button>
             </div>
+        </div>
+
+        <div class="card">
+            <div class="ctitle">玩家設定</div>
+            <div class="color-group">
+                <div class="color-box">
+                    <span>代表色</span>
+                    <div class="color-swatch" id="rm-col-sw" style="background: #7B241C">
+                        <input type="color" class="color-input" id="rm-col-inp" value="#7B241C">
+                    </div>
+                </div>
+                <div class="color-box">
+                    <span>字體色</span>
+                    <div class="color-swatch" id="rm-txt-sw" style="background: #FFFFFF">
+                        <input type="color" class="color-input" id="rm-txt-inp" value="#ffffff">
+                    </div>
+                </div>
+            </div>
+            <input type="text" class="field" id="rm-nick" maxlength="10" placeholder="輸入暱稱...">
             <div style="display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap;">
-                <button class="btn btn-sm" onclick="app.openEditNick()">✏️ 修改暱稱/顏色</button>
+                <button class="btn btn-sm btn-pri" onclick="app.openEditNick()">✏️ 修改暱稱/顏色</button>
                 <button class="btn btn-sm btn-gld" onclick="app.copyInvite()">🔗 邀請連結</button>
-                <button class="btn btn-sm btn-dng" id="btn-rebuild" style="display: none;"
-                    onclick="app.rebuildRoom()">🔨 重建</button>
-                <button class="btn btn-sm" id="btn-reset" style="display: none;" onclick="app.resetAll()">🗑️
-                    清空標記</button>
+                <button class="btn btn-sm" id="btn-reset" style="display: none;" onclick="app.resetAll()">🗑️ 清空標記</button>
             </div>
         </div>
 
@@ -194,7 +210,8 @@
         <div class="card" id="map-area">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
                 <div class="ctitle" id="txt-map-title" style="margin-bottom: 0;">⬆ 樓梯地圖</div>
-                <select id="fz-sel" class="field" style="width: auto; padding: 4px 8px; font-size: 11px; background: #0b0b14;">
+                <select id="fz-sel" class="field"
+                    style="width: auto; padding: 4px 8px; font-size: 11px; background: #0b0b14;">
                     <option value="fz-sm">小字體</option>
                     <option value="fz-md" selected>中字體</option>
                     <option value="fz-lg">大字體</option>

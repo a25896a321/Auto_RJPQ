@@ -12,6 +12,8 @@
 | v2.1.0 | 2026-03-22 | 建立 `firebase_seed.json` 用於初始化資料庫。 |
 | v2.2.0 | 2026-03-22 | **補全與修復**：新增房名、密碼編輯、剔除玩家、刷新按鈕，修復建立卡死問題。 |
 | v2.3.0 | 2026-03-23 | **統計邏輯重構**：改用 Firebase 節點監聽（`rooms` 與 `presence`）來準確計算活躍房間與在線人數。 |
+| v2.4.0 | 2026-03-23 | **體驗優化**：新增房間內即時修改暱稱/顏色介面，移除重建按鈕，並實作自動分配預設顏色邏輯。 |
+
 
 
 ---
@@ -46,14 +48,13 @@
 
 - **前端**：HTML5, CSS3, JavaScript (Vanilla JS)。
 - **資料庫**：Firebase Realtime Database (即時同步數據)。
-- **託管**：Cloudflare Pages (全球 CDN 加速)。
 - **即時通訊**：Firebase SDK 替代 WebSocket。
 
 ---
 
-## 🌐 串接步驟與說明 (Cloudflare Pages + GitHub)
+## 🌐 串接步驟與說明 (GitHub)
 
-本專案建議部署於 Cloudflare Pages 並與 GitHub 存儲庫串聯，以實現自動部署。
+本專案建議部署於 GitHub 存儲庫串聯，以實現自動部署。
 
 ### 1. 建立 GitHub 儲存庫
 1. 在 GitHub 上建立一個新專案 `Artale_RJPQ_oojump`。
@@ -66,17 +67,6 @@
    git push -u origin main
    ```
 
-### 2. 串聯 Cloudflare Pages
-1. 登錄 [Cloudflare 控制台](https://dash.cloudflare.com/)。
-2. 導航至 **Workers & Pages** -> **Create application** -> **Pages** -> **Connect to Git**。
-3. 選擇您的 GitHub 儲存庫。
-4. **Build settings**：
-   - **Framework preset**: None (或是選擇 HTML if available)。
-   - **Build command**: (保持空白，本專案為純靜態 HTML)。
-   - **Build output directory**: `.` (本專案文件位於根目錄)。
-5. 點擊 **Save and Deploy**。
-
----
 
 ## 📋 遊戲規則
 - 每層限 1 格正確，3 格錯誤。

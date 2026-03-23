@@ -93,7 +93,13 @@ async function doCreate() {
     const pw = document.getElementById('cr-pw').value.trim();
     const newRoomId = Math.floor(10000000 + Math.random() * 90000000).toString();
 
-    myInfo = { nick, color: document.getElementById('lb-col-inp').value, textColor: document.getElementById('lb-txt-inp').value, isHost: true };
+    const colorList = config.gameSettings.defaultColors;
+    myInfo = { 
+        nick, 
+        color: document.getElementById('lb-col-inp').value, 
+        textColor: document.getElementById('lb-txt-inp').value, 
+        isHost: true 
+    };
 
     // Initial Map Data (10x4)
     const mapData = Array(10).fill(null).map(() =>
@@ -177,7 +183,14 @@ async function doJoin() {
         if (playerArray.length >= 4) return alert('房間已滿。');
         
         const nick = document.getElementById('lb-nick').value.trim() || ('未命名' + (playerArray.length + 1));
-        myInfo = { nick, color: document.getElementById('lb-col-inp').value, textColor: document.getElementById('lb-txt-inp').value, isHost: false };
+        const colorList = config.gameSettings.defaultColors;
+        let color = document.getElementById('lb-col-inp').value;
+        // Auto-assign color if user didn't change initial red
+        if (color === '#7B241C' && playerArray.length > 0) {
+            color = colorList[playerArray.length] || color;
+        }
+
+        myInfo = { nick, color, textColor: document.getElementById('lb-txt-inp').value, isHost: false };
 
         if (playerArray.some(p => p.nick === nick)) return alert('暱稱重複。');
 
@@ -195,6 +208,21 @@ function joinRoomStream(rid) {
     document.getElementById('screen-landing').style.display = 'none';
     document.getElementById('screen-room').style.display = 'flex';
     document.getElementById('rid-box').textContent = `房號: ${rid}`;
+
+    // Sync room-screen inputs from current info
+    document.getElementById('rm-nick').value = myInfo.nick;
+    document.getElementById('rm-col-inp').value = myInfo.color;
+    document.getElementById('rm-col-sw').style.background = myInfo.color;
+    document.getElementById('rm-txt-inp').value = myInfo.textColor;
+    document.getElementById('rm-txt-sw').style.background = myInfo.textColor;
+
+    // Room-screen color listeners
+    document.getElementById('rm-col-inp').addEventListener('input', e => {
+        document.getElementById('rm-col-sw').style.background = e.target.value;
+    });
+    document.getElementById('rm-txt-inp').addEventListener('input', e => {
+        document.getElementById('rm-txt-sw').style.background = e.target.value;
+    });
 
     // Logs subscription
     const logsRef = ref(db, `rooms/${rid}/logs`);
@@ -241,7 +269,6 @@ function renderRoom() {
     // Update labels
     document.getElementById('room-name-display').textContent = `房間: ${roomData.config.name || '未命名'}`;
     document.getElementById('room-badge').textContent = `成員: ${players.length}/4`;
-    document.getElementById('btn-rebuild').style.display = isHost ? 'inline-flex' : 'none';
     document.getElementById('btn-reset').style.display = isHost ? 'inline-flex' : 'none';
     document.getElementById('btn-edit-pw').style.display = isHost ? 'inline-flex' : 'none';
     document.getElementById('chat-sec').style.display = options.chat ? 'block' : 'none';
@@ -514,14 +541,8 @@ function leaveRoom() {
     }
 }
 
-async function rebuildRoom() {
-    if (!confirm('重建房間將踢出所有成員並關閉當前房間，確定嗎？')) return;
-    await update(ref(db, `rooms/${roomId}/config`), { status: 'closed' });
-    // Small delay to let others see
-    setTimeout(() => {
-        remove(ref(db, `rooms/${roomId}`));
-    }, 1000);
-}
+        // Rebuild logic removed as requested
+
 
 async function resetAll() {
     if (!confirm('確定清空所有標記？')) return;
@@ -583,7 +604,7 @@ function getPathRecordText(nick) {
 
 // Define on window for HTML onclicks
 window.app = {
-    doCreate, doJoin, leaveRoom, rebuildRoom, resetAll,
+    doCreate, doJoin, leaveRoom, resetAll,
     copyId: () => { navigator.clipboard.writeText(roomId); toast('房號已複製'); },
     copyPw: () => { navigator.clipboard.writeText(roomData.config.password); toast('密碼已複製'); },
     copyInvite: () => { navigator.clipboard.writeText(window.location.href); toast('邀請連結已複製'); },
@@ -599,24 +620,26 @@ window.app = {
         });
         inp.value = '';
     },
-    openEditNick: () => {
-        const newNick = prompt('輸入新暱稱 (留空則不修改):', myInfo.nick);
-        if (newNick === null) return;
-        const finalNick = newNick.trim() || myInfo.nick;
-        
-        // Show color picker or just update. For simplicity, we assume they might want to change color too.
-        // But prompt only allows text. Let's redirect to lobby logic but auto-join if they want to change more.
-        if (confirm(`暱稱將改為 ${finalNick}。系統將自動重新加入房間以套用變更（免密碼）。`)) {
-            myInfo.nick = finalNick;
-            document.getElementById('lb-nick').value = finalNick;
-            const rid = roomId;
-            // Leave room and rejoin
-            remove(ref(db, `rooms/${rid}/players/${myUid}`));
-            // Re-join logic (skipping PW check by directly setting)
-            setTimeout(async () => {
-                await set(ref(db, `rooms/${rid}/players/${myUid}`), myInfo);
-                joinRoomStream(rid);
-            }, 500);
+    openEditNick: async () => {
+        const newNick = document.getElementById('rm-nick').value.trim();
+        const newColor = document.getElementById('rm-col-inp').value;
+        const newTextColor = document.getElementById('rm-txt-inp').value;
+
+        if (!newNick) return alert('暱稱不能為空');
+        if (newNick === myInfo.nick && newColor === myInfo.color && newTextColor === myInfo.textColor) return;
+
+        if (confirm(`確定要將資訊修改為 ${newNick} 嗎？`)) {
+            myInfo.nick = newNick;
+            myInfo.color = newColor;
+            myInfo.textColor = newTextColor;
+
+            await update(ref(db, `rooms/${roomId}/players/${myUid}`), {
+                nick: newNick,
+                color: newColor,
+                textColor: newTextColor
+            });
+            log('個人資訊已更新', 'ok');
+            renderRoom(); 
         }
     },
     doJoinLanding,
