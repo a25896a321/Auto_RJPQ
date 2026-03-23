@@ -1,6 +1,6 @@
 {
   "appInfo": {
-    "title": "Artale_RJPQ_firebase",
+    "title": "Artale_RJPQ_RTDB",
     "version": "2.0.0",
     "author": "oo_jump",
     "description": "Romeo and Juliet Party Quest 多人即時同步標記輔助工具"
@@ -30,7 +30,7 @@
   "uiStrings": {
     "zh-TW": {
       "lobby": {
-        "title": "⚔️ Artale_RJPQ_firebase",
+        "title": "⚔️ Artale_RJPQ_RTDB",
         "playerSection": "玩家設定",
         "nickPlaceholder": "輸入暱稱（中英數，最多10字）...",
         "createRoom": "🏠 建立房間",

@@ -66,6 +66,11 @@
    git push -u origin main
    ```
 
+### 2. 串連 GitHub Pages (自動佈署)
+1. 前往 **Settings -> Pages**。
+2. 在 **Build and deployment** -> **Source** 選擇 **GitHub Actions**。
+
+---
 
 ## 📋 遊戲規則
 - 每層限 1 格正確，3 格錯誤。
