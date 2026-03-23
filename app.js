@@ -98,7 +98,7 @@ async function doCreate() {
     const pw = document.getElementById('cr-pw').value.trim();
     const newRoomId = Math.floor(10000000 + Math.random() * 90000000).toString();
 
-    const colorList = config.gameSettings.defaultColors;
+    const configColors = config.gameSettings.defaultColors;
     myInfo = {
         nick,
         color: document.getElementById('lb-col-inp').value,
@@ -189,10 +189,12 @@ async function doJoin() {
 
         const nick = document.getElementById('lb-nick').value.trim() || ('未命名' + (playerArray.length + 1));
         const colorList = config.gameSettings.defaultColors;
+        const usedColors = playerArray.map(p => p.color);
         let color = document.getElementById('lb-col-inp').value;
-        // Auto-assign color if user didn't change initial red
-        if (color === '#7B241C' && playerArray.length > 0) {
-            color = colorList[playerArray.length] || color;
+
+        // Auto-assign non-conflicting color if red is default or conflict exists
+        if (color === '#7B241C' || usedColors.includes(color)) {
+            color = colorList.find(c => !usedColors.includes(c)) || colorList[0];
         }
 
         myInfo = { nick, color, textColor: document.getElementById('lb-txt-inp').value, isHost: false };
@@ -369,14 +371,16 @@ function renderGrid() {
                 icon.textContent = 'O'; icon.style.color = '#fff';
                 owner.textContent = cell.owner; owner.style.color = '#fff';
             } else {
-                if (cell.certain) {
-                    door.classList.add('is-certain');
-                    icon.textContent = '★'; icon.style.color = config?.gameSettings?.defaultColors?.[0] || '#f59e0b';
-                    owner.textContent = '僅剩此格';
-                } else if (cell.errors && cell.errors.includes(myInfo.nick)) {
+                // Priority: Personal Errors -> Shared Certainty -> Shared Maybe
+                if (cell.errors && cell.errors.includes(myInfo.nick)) {
                     door.classList.add('is-error');
                     icon.textContent = '✗'; icon.style.color = '#ef4444';
                     if (cell.maybe && cell.maybe.length > 0) owner.textContent = '(' + cell.maybe.join('/') + ')';
+                } else if (cell.certain) {
+                    door.classList.add('is-certain');
+                    const winner = (cell.maybe && cell.maybe.length > 0) ? cell.maybe[0] : '???';
+                    icon.textContent = '★'; icon.style.color = config?.gameSettings?.defaultColors?.[0] || '#f59e0b';
+                    owner.textContent = winner + ' 唯一確定';
                 } else if (cell.maybe && cell.maybe.length > 0) {
                     icon.textContent = '?'; icon.style.color = '#8b5cf6';
                     owner.textContent = '(' + cell.maybe.join('/') + ')';

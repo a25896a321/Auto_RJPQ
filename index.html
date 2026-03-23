@@ -176,10 +176,8 @@
             </div>
             <input type="text" class="field" id="rm-nick" maxlength="10" placeholder="輸入暱稱...">
             <div style="display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap;">
-                <button class="btn btn-sm btn-pri" onclick="app.openEditNick()">✏️ 修改暱稱/顏色</button>
+                <button class="btn btn-sm btn-pri" onclick="app.openEditNick()">修改暱稱/顏色</button>
                 <button class="btn btn-sm btn-gld" onclick="app.copyInvite()">🔗 邀請連結</button>
-                <button class="btn btn-sm" id="btn-reset" style="display: none;" onclick="app.resetAll()">🗑️
-                    清空標記</button>
             </div>
         </div>
 
@@ -207,6 +205,9 @@
                     style="font-family: monospace; font-size: 24px; font-weight: 900; color: var(--green); letter-spacing: 2px;">
                     ___-___-___-_</div>
                 <button class="btn" onclick="app.copyPath()" title="複製">📋</button>
+            </div>
+            <div style="margin-top: 10px; display: flex; justify-content: center;">
+                <button class="btn btn-sm btn-dng" id="btn-reset" style="display: none; width: 100%;" onclick="app.resetAll()">🗑️ 清空全部標記</button>
             </div>
         </div>
 
