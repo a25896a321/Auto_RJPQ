@@ -28,7 +28,7 @@ async function init() {
             const rooms = snap.val() || {};
             let totalPlayers = 0;
             let validRoomCount = 0;
-            
+
             Object.entries(rooms).forEach(([rid, r]) => {
                 const pCount = r.players ? Object.keys(r.players).length : 0;
                 if (pCount === 0) {
@@ -38,7 +38,7 @@ async function init() {
                     totalPlayers += pCount;
                 }
             });
-            
+
             document.getElementById('stat-rooms').textContent = validRoomCount;
             document.getElementById('stat-users').textContent = totalPlayers;
         });
@@ -387,7 +387,7 @@ function renderGrid() {
                     door.classList.add('is-certain');
                     const winner = (cell.maybe && cell.maybe.length > 0) ? cell.maybe[0] : '???';
                     icon.textContent = '★'; icon.style.color = config?.gameSettings?.defaultColors?.[0] || '#f59e0b';
-                    owner.textContent = winner + ' 唯一確定';
+                    owner.textContent = winner;
                 } else if (cell.maybe && cell.maybe.length > 0) {
                     icon.textContent = '?'; icon.style.color = '#8b5cf6';
                     owner.textContent = '(' + cell.maybe.join('/') + ')';
