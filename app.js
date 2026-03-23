@@ -23,15 +23,23 @@ async function init() {
         const app = initializeApp(config.firebaseConfig);
         db = getDatabase(app);
 
-        // Real-time server stats: Count rooms and total players from the tree
+        // Real-time server stats and cleanup of ghost empty rooms
         onValue(ref(db, 'rooms'), (snap) => {
             const rooms = snap.val() || {};
-            const roomCount = Object.keys(rooms).length;
             let totalPlayers = 0;
-            Object.values(rooms).forEach(r => {
-                if (r.players) totalPlayers += Object.keys(r.players).length;
+            let validRoomCount = 0;
+            
+            Object.entries(rooms).forEach(([rid, r]) => {
+                const pCount = r.players ? Object.keys(r.players).length : 0;
+                if (pCount === 0) {
+                    remove(ref(db, `rooms/${rid}`));
+                } else {
+                    validRoomCount++;
+                    totalPlayers += pCount;
+                }
             });
-            document.getElementById('stat-rooms').textContent = roomCount;
+            
+            document.getElementById('stat-rooms').textContent = validRoomCount;
             document.getElementById('stat-users').textContent = totalPlayers;
         });
 
@@ -91,11 +99,11 @@ async function doCreate() {
     const newRoomId = Math.floor(10000000 + Math.random() * 90000000).toString();
 
     const colorList = config.gameSettings.defaultColors;
-    myInfo = { 
-        nick, 
-        color: document.getElementById('lb-col-inp').value, 
-        textColor: document.getElementById('lb-txt-inp').value, 
-        isHost: true 
+    myInfo = {
+        nick,
+        color: document.getElementById('lb-col-inp').value,
+        textColor: document.getElementById('lb-txt-inp').value,
+        isHost: true
     };
 
     // Initial Map Data (10x4)
@@ -153,7 +161,7 @@ function showLanding(rid) {
     document.getElementById('screen-lobby').style.display = 'none';
     document.getElementById('screen-landing').style.display = 'flex';
     document.getElementById('landing-rid-badge').textContent = '#' + rid;
-    
+
     // Sync color swatches in landing
     document.getElementById('ld-col-inp').addEventListener('input', e => {
         document.getElementById('ld-col-sw').style.background = e.target.value;
@@ -178,7 +186,7 @@ async function doJoin() {
 
         const playerArray = Object.values(data.players || {});
         if (playerArray.length >= 4) return alert('房間已滿。');
-        
+
         const nick = document.getElementById('lb-nick').value.trim() || ('未命名' + (playerArray.length + 1));
         const colorList = config.gameSettings.defaultColors;
         let color = document.getElementById('lb-col-inp').value;
@@ -397,19 +405,18 @@ async function handleCellClick(f, d, btn) {
             updates[`${d}/v`] = 0;
             updates[`${d}/owner`] = null;
             updates[`${d}/ownerColor`] = null;
-            // Clean up errors auto-marked for others
+            // Clean up errors auto-marked for others (Since I'm no longer correct on this floor)
             if (options.auto) {
                 for (let i = 0; i < 4; i++) {
-                    if (i !== d) {
-                        const otherErrors = roomData.mapData[f][i].errors || [];
-                        updates[`${i}/errors`] = otherErrors.filter(e => e !== myInfo.nick);
-                    }
+                    let eList = roomData.mapData[f][i].errors || [];
+                    updates[`${i}/errors`] = eList.filter(e => e !== myInfo.nick);
                 }
             }
             log(`取消標記 L${10 - f}`, 'warn');
         } else if (cell.v === 0) {
-            // Select as Correct (remove previous selection from this player on this floor)
+            // Select as Correct
             for (let i = 0; i < 4; i++) {
+                // Clear my previous ownership and error on this floor completely to recalculate
                 if (roomData.mapData[f][i].owner === myInfo.nick) {
                     updates[`${i}/v`] = 0;
                     updates[`${i}/owner`] = null;
@@ -420,11 +427,15 @@ async function handleCellClick(f, d, btn) {
             updates[`${d}/owner`] = myInfo.nick;
             updates[`${d}/ownerColor`] = myInfo.color;
 
-            // Auto mark others as errors for this player
+            // Auto-mark logic: mark others as errors, and ensure current d is NOT an error
             if (options.auto) {
                 for (let i = 0; i < 4; i++) {
-                    if (i !== d) {
-                        let eList = roomData.mapData[f][i].errors || [];
+                    let eList = roomData.mapData[f][i].errors || [];
+                    if (i === d) {
+                        // Current door cannot be an error since I marked it correct
+                        updates[`${i}/errors`] = eList.filter(e => e !== myInfo.nick);
+                    } else {
+                        // Other doors are errors for me
                         if (!eList.includes(myInfo.nick)) {
                             updates[`${i}/errors`] = [...eList, myInfo.nick];
                         }
@@ -529,7 +540,7 @@ function leaveRoom() {
         // Need to check players count before leaving
         const players = roomData ? roomData.players : {};
         const playerKeys = Object.keys(players || {});
-        
+
         if (playerKeys.length <= 1 && players[myUid]) {
             // I am the last player
             remove(ref(db, `rooms/${roomId}`));
@@ -546,12 +557,12 @@ function leaveRoom() {
     }
 }
 
-        // Rebuild logic removed as requested
+// Rebuild logic removed as requested
 
 
 async function resetAll() {
     if (!confirm('確定清空所有標記？')) return;
-    
+
     // Log everyone's path to room log (Shared)
     const players = Object.values(roomData.players || {});
     players.forEach(p => {
@@ -644,7 +655,7 @@ window.app = {
                 textColor: newTextColor
             });
             log('個人資訊已更新', 'ok');
-            renderRoom(); 
+            renderRoom();
         }
     },
     doJoinLanding,
