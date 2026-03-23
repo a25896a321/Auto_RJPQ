@@ -192,9 +192,16 @@ async function doJoin() {
         const usedColors = playerArray.map(p => p.color);
         let color = document.getElementById('lb-col-inp').value;
 
-        // Auto-assign non-conflicting color if red is default or conflict exists
-        if (color === '#7B241C' || usedColors.includes(color)) {
-            color = colorList.find(c => !usedColors.includes(c)) || colorList[0];
+        // If user kept the initial default color (#7B241C), auto-assign a fresh one
+        // If they chose a color that someone else is using, also auto-assign to avoid conflict
+        if (color.toUpperCase() === colorList[0].toUpperCase() || usedColors.includes(color)) {
+            const nextBest = colorList.find(c => !usedColors.includes(c));
+            if (nextBest) {
+                color = nextBest;
+                // Sync back to lobby inputs so user sees their actual assigned color
+                document.getElementById('lb-col-inp').value = color;
+                document.getElementById('lb-col-sw').style.background = color;
+            }
         }
 
         myInfo = { nick, color, textColor: document.getElementById('lb-txt-inp').value, isHost: false };
