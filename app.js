@@ -108,7 +108,7 @@ async function doCreate() {
 
     // Initial Map Data (10x4)
     const mapData = Array(10).fill(null).map(() =>
-        Array(4).fill(null).map(() => ({ v: 0, owner: null, errors: [], maybe: [], certain: false }))
+        Array(4).fill(null).map(() => ({ v: 0, owner: null, errors: [], o_errors: [], maybe: [], certain: false }))
     );
 
     const roomState = {
@@ -379,8 +379,9 @@ function renderGrid() {
                 icon.textContent = 'O'; icon.style.color = '#fff';
                 owner.textContent = cell.owner; owner.style.color = '#fff';
             } else {
-                // Priority: Personal Errors -> Shared Certainty -> Shared Maybe
-                if (cell.errors && cell.errors.includes(myInfo.nick)) {
+                // Priority: Personal Errors (manual or auto) -> Shared Certainty -> Shared Maybe
+                const allErrors = (cell.errors || []).concat(cell.o_errors || []);
+                if (allErrors.includes(myInfo.nick)) {
                     door.classList.add('is-error');
                     icon.textContent = '✗'; icon.style.color = '#ef4444';
                     if (cell.maybe && cell.maybe.length > 0) owner.textContent = '(' + cell.maybe.join('/') + ')';
@@ -416,62 +417,48 @@ function getFloorUpdates(f, d, btn, floorData, currentNick, currentColor, auto) 
 
     if (btn === 'left') {
         if (cell.v === 1 && cell.owner === currentNick) {
-            // 本人取消標記
+            // 取消標記
             updates[`${d}/v`] = 0;
             updates[`${d}/owner`] = null;
             updates[`${d}/ownerColor`] = null;
             if (auto) {
-                // 清理此玩家在整層樓產生的所有自動 Errors
                 for (let i = 0; i < 4; i++) {
-                    const errKey = `${i}/errors`;
-                    let eList = floorData[i].errors || [];
-                    updates[errKey] = eList.filter(e => e !== currentNick);
+                    let oList = floorData[i].o_errors || [];
+                    updates[`${i}/o_errors`] = oList.filter(e => e !== currentNick);
                 }
             }
             msg = `取消標記 L${10 - f}`;
             type = 'warn';
-        } else {
-            // 標記為正確 (點擊新格：不論是換位、或取代他人)
-            
-            // 1. 遍歷整層，清理所有原本存在的正確格及其對應的自動 Errors
+        } else if (cell.v === 0) {
+            // 標記為正確
             for (let i = 0; i < 4; i++) {
-                if (floorData[i].v === 1) {
-                    const prevNick = floorData[i].owner;
-                    
-                    // 清除原本格子的 Correct 狀態
+                // 清除該玩家在該層樓的所有舊 o_errors
+                let oList = floorData[i].o_errors || [];
+                if (oList.includes(currentNick)) {
+                    updates[`${i}/o_errors`] = oList.filter(e => e !== currentNick);
+                }
+
+                if (floorData[i].owner === currentNick) {
                     updates[`${i}/v`] = 0;
                     updates[`${i}/owner`] = null;
                     updates[`${i}/ownerColor`] = null;
-                    
-                    // 清除該舊 OWNER 在整層產生的所有 Errors
-                    if (auto && prevNick) {
-                        for (let k = 0; k < 4; k++) {
-                            const errKey = `${k}/errors`;
-                            // 優先從本次 updates 中讀取已有的變更，否則從 floorData 讀取
-                            let currentEList = updates[errKey] !== undefined ? updates[errKey] : (floorData[k].errors || []);
-                            updates[errKey] = currentEList.filter(e => e !== prevNick);
-                        }
-                    }
                 }
             }
-
-            // 2. 設置新玩家為當前正確格
             updates[`${d}/v`] = 1;
             updates[`${d}/owner`] = currentNick;
             updates[`${d}/ownerColor`] = currentColor;
 
-            // 3. 自動設定新玩家的 Errors (非正確格的其他格)
             if (auto) {
                 for (let i = 0; i < 4; i++) {
-                    const errKey = `${i}/errors`;
-                    let currentEList = updates[errKey] !== undefined ? updates[errKey] : (floorData[i].errors || []);
                     if (i === d) {
-                        // 正確格不應標記自己為 Error
-                        updates[errKey] = currentEList.filter(e => e !== currentNick);
+                        // 當前格確信正確，則確保 o_errors 沒有自己 (這步在上面的循環已處理，這裡確保一致性)
+                        let oList = updates[`${i}/o_errors`] || floorData[i].o_errors || [];
+                        updates[`${i}/o_errors`] = oList.filter(e => e !== currentNick);
                     } else {
-                        // 其他格標記自己為 Error
-                        if (!currentEList.includes(currentNick)) {
-                            updates[errKey] = [...currentEList, currentNick];
+                        // 同樓層其他格自動標註為 o_errors
+                        let oList = updates[`${i}/o_errors`] || floorData[i].o_errors || [];
+                        if (!oList.includes(currentNick)) {
+                            updates[`${i}/o_errors`] = [...oList, currentNick];
                         }
                     }
                 }
@@ -516,7 +503,9 @@ function calculateFloorMaybe(floor, playersObj) {
     activePlayers.forEach(p => {
         possible[p] = {};
         unpassedIdx.forEach(d => {
-            possible[p][d] = !(floor[d].errors || []).includes(p);
+            const hasError = (floor[d].errors || []).includes(p);
+            const hasOError = (floor[d].o_errors || []).includes(p);
+            possible[p][d] = !hasError && !hasOError;
         });
     });
 
@@ -588,6 +577,13 @@ async function handleCellClick(f, d, btn) {
         const txResult = await runTransaction(floorRef, (currentFloor) => {
             if (!currentFloor) return; // 房間可能已被刪除
 
+            // 衝突判定：如果是左鍵想標正確格，但伺服器上該格 L 已經被別人標走了 (v=1 且 owner 不同)
+            if (btn === 'left' && updates[`${d}/v`] === 1) {
+                if (currentFloor[d].v === 1 && currentFloor[d].owner !== myInfo.nick) {
+                    // 放棄交易，觸發 committed = false
+                    return; 
+                }
+            }
 
             // 在伺服器最新數據上重新計算變更 (確保 errors 列表、maybe 列表都是最新的)
             const serverResult = getFloorUpdates(f, d, btn, currentFloor, myInfo.nick, myInfo.color, options.auto);
@@ -676,7 +672,7 @@ async function resetAll() {
     sendRoomLog('已由房主清空所有標記', 'warn');
 
     const initialMap = Array(10).fill(null).map(() =>
-        Array(4).fill(null).map(() => ({ v: 0, owner: null, errors: [], maybe: [], certain: false }))
+        Array(4).fill(null).map(() => ({ v: 0, owner: null, errors: [], o_errors: [], maybe: [], certain: false }))
     );
     await update(ref(db, `rooms/${roomId}`), { mapData: initialMap });
 }
