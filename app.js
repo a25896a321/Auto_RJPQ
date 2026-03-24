@@ -405,7 +405,74 @@ function renderGrid() {
     }
 }
 
-function getRecalcedFloor(floor, playersObj) {
+/**
+ * 計算樓層更新邏輯 (不直接寫入 DB，回傳 updates 物件)
+ */
+function getFloorUpdates(f, d, btn, floorData, currentNick, currentColor, auto) {
+    const updates = {};
+    const cell = floorData[d];
+    let msg = '';
+    let type = 'info';
+
+    if (btn === 'left') {
+        if (cell.v === 1 && cell.owner === currentNick) {
+            // 取消標記
+            updates[`${d}/v`] = 0;
+            updates[`${d}/owner`] = null;
+            updates[`${d}/ownerColor`] = null;
+            if (auto) {
+                for (let i = 0; i < 4; i++) {
+                    let eList = floorData[i].errors || [];
+                    updates[`${i}/errors`] = eList.filter(e => e !== currentNick);
+                }
+            }
+            msg = `取消標記 L${10 - f}`;
+            type = 'warn';
+        } else if (cell.v === 0) {
+            // 標記為正確
+            for (let i = 0; i < 4; i++) {
+                if (floorData[i].owner === currentNick) {
+                    updates[`${i}/v`] = 0;
+                    updates[`${i}/owner`] = null;
+                    updates[`${i}/ownerColor`] = null;
+                }
+            }
+            updates[`${d}/v`] = 1;
+            updates[`${d}/owner`] = currentNick;
+            updates[`${d}/ownerColor`] = currentColor;
+
+            if (auto) {
+                for (let i = 0; i < 4; i++) {
+                    let eList = floorData[i].errors || [];
+                    if (i === d) {
+                        updates[`${i}/errors`] = eList.filter(e => e !== currentNick);
+                    } else {
+                        if (!eList.includes(currentNick)) {
+                            updates[`${i}/errors`] = [...eList, currentNick];
+                        }
+                    }
+                }
+            }
+            msg = `標記 L${10 - f} 正確：第${d + 1}格`;
+            type = 'ok';
+        }
+    } else if (btn === 'right') {
+        if (cell.v === 1) return { updates: {} };
+        let eList = cell.errors || [];
+        if (eList.includes(currentNick)) {
+            updates[`${d}/errors`] = eList.filter(e => e !== currentNick);
+        } else {
+            if (eList.length >= 4) return { updates: {} };
+            updates[`${d}/errors`] = [...eList, currentNick];
+        }
+    }
+    return { updates, msg, type };
+}
+
+/**
+ * 核心：計算可能性標記 (純函數，直接修改傳入的 floor 陣列)
+ */
+function calculateFloorMaybe(floor, playersObj) {
     const playersInRoom = Object.values(playersObj).map(p => p.nick);
     const botCount = 4 - playersInRoom.length;
     const allPlayers = [...playersInRoom, ...BOT_NAMES.slice(0, botCount)];
@@ -417,7 +484,10 @@ function getRecalcedFloor(floor, playersObj) {
     const unpassedIdx = [];
     floor.forEach((c, i) => { if (c.v !== 1) unpassedIdx.push(i); });
 
-    if (activePlayers.length === 0 || unpassedIdx.length === 0) return floor;
+    if (activePlayers.length === 0 || unpassedIdx.length === 0) {
+        unpassedIdx.forEach(d => { floor[d].maybe = []; floor[d].certain = false; });
+        return floor;
+    }
 
     const possible = {};
     activePlayers.forEach(p => {
@@ -464,131 +534,81 @@ function getRecalcedFloor(floor, playersObj) {
 }
 
 async function handleCellClick(f, d, btn) {
-    if (!roomId) return;
+    if (!roomId || !roomData) return;
 
-    // 1. 備份原始地圖資料 (Rollback 用)
-    const oldMapData = JSON.parse(JSON.stringify(roomData.mapData));
-    const floor = roomData.mapData[f];
-    const cell = floor[d];
+    // A. 樂觀 UI 更新：先備份當前樓層狀態
+    const backupFloor = JSON.parse(JSON.stringify(roomData.mapData[f]));
+    
+    // 計算預期變更
+    const result = getFloorUpdates(f, d, btn, roomData.mapData[f], myInfo.nick, myInfo.color, options.auto);
+    const { updates, msg, type } = result;
+    if (Object.keys(updates).length === 0) return;
 
-    // 2. 樂觀更新 (Optimistic UI)
-    let logMsg = '';
-    let logType = 'info';
+    // 直接在本地狀態應用變更 (樂觀更新)
+    Object.keys(updates).forEach(key => {
+        const [idx, prop] = key.split('/');
+        roomData.mapData[f][idx][prop] = updates[key];
+    });
 
-    if (btn === 'left') {
-        if (cell.v === 1 && cell.owner === myInfo.nick) {
-            // 取消標記
-            floor[d].v = 0; floor[d].owner = null; floor[d].ownerColor = null;
-            if (options.auto) {
-                for (let i = 0; i < 4; i++) {
-                    floor[i].errors = (floor[i].errors || []).filter(e => e !== myInfo.nick);
-                }
-            }
-            logMsg = `取消標記 L${10 - f}`; logType = 'warn';
-        } else if (cell.v === 0) {
-            // 標記正確
-            for (let i = 0; i < 4; i++) {
-                if (floor[i].owner === myInfo.nick) {
-                    floor[i].v = 0; floor[i].owner = null; floor[i].ownerColor = null;
-                }
-            }
-            floor[d].v = 1; floor[d].owner = myInfo.nick; floor[d].ownerColor = myInfo.color;
-            if (options.auto) {
-                for (let i = 0; i < 4; i++) {
-                    let eList = floor[i].errors || [];
-                    if (i === d) floor[i].errors = eList.filter(e => e !== myInfo.nick);
-                    else if (!eList.includes(myInfo.nick)) floor[i].errors = [...eList, myInfo.nick];
-                }
-            }
-            logMsg = `標記 L${10 - f} 正確：第${d + 1}格`; logType = 'ok';
-        }
-    } else if (btn === 'right') {
-        if (cell.v === 1) return;
-        let eList = cell.errors || [];
-        if (eList.includes(myInfo.nick)) {
-            floor[d].errors = eList.filter(e => e !== myInfo.nick);
-        } else {
-            if (eList.length < 4) floor[d].errors = [...eList, myInfo.nick];
-        }
+    // 樂觀計算的可能性
+    if (options.auto) {
+        calculateFloorMaybe(roomData.mapData[f], roomData.players || {});
     }
 
-    if (options.auto) getRecalcedFloor(floor, roomData.players);
+    // 立即渲染畫面
+    renderRoom();
+    if (msg) log(`(樂觀) ${msg}`, type);
 
-    // 立即渲染前端
-    renderGrid();
-    updatePathRecord();
-
-    // 3. Firebase 同步與衝突檢測 (Rollback 機制)
-    const path = `rooms/${roomId}/mapData/${f}`;
+    // B. Firebase Transaction 寫入與衝突檢查
+    const floorRef = ref(db, `rooms/${roomId}/mapData/${f}`);
     try {
-        const result = await runTransaction(ref(db, path), (currentFloor) => {
-            if (!currentFloor) return;
+        const txResult = await runTransaction(floorRef, (currentFloor) => {
+            if (!currentFloor) return; // 房間可能已被刪除
 
-            // 衝突檢查: 如果別人已經搶先標記了這格為正確 (Left Click 且原本是 0)
-            if (btn === 'left' && cell.v === 0) {
+            // 衝突判定：如果是左鍵想標正確格，但伺服器上該格 L 已經被別人標走了 (v=1 且 owner 不同)
+            if (btn === 'left' && updates[`${d}/v`] === 1) {
                 if (currentFloor[d].v === 1 && currentFloor[d].owner !== myInfo.nick) {
-                    return; // 終止交易，表示被搶走了
+                    // 放棄交易，觸發 committed = false
+                    return; 
                 }
             }
 
-            // 在最新伺服器狀態上重複邏輯
-            if (btn === 'left') {
-                if (currentFloor[d].v === 1 && currentFloor[d].owner === myInfo.nick) {
-                    currentFloor[d].v = 0; currentFloor[d].owner = null; currentFloor[d].ownerColor = null;
-                    if (options.auto) {
-                        for (let i = 0; i < 4; i++) currentFloor[i].errors = (currentFloor[i].errors || []).filter(e => e !== myInfo.nick);
-                    }
-                } else {
-                    for (let i = 0; i < 4; i++) {
-                        if (currentFloor[i].owner === myInfo.nick) {
-                            currentFloor[i].v = 0; currentFloor[i].owner = null; currentFloor[i].ownerColor = null;
-                        }
-                    }
-                    currentFloor[d].v = 1; currentFloor[d].owner = myInfo.nick; currentFloor[d].ownerColor = myInfo.color;
-                    if (options.auto) {
-                        for (let i = 0; i < 4; i++) {
-                            let eList = currentFloor[i].errors || [];
-                            if (i === d) currentFloor[i].errors = eList.filter(e => e !== myInfo.nick);
-                            else if (!eList.includes(myInfo.nick)) currentFloor[i].errors = [...eList, myInfo.nick];
-                        }
-                    }
-                }
-            } else if (btn === 'right') {
-                if (currentFloor[d].v === 1) return currentFloor;
-                let eList = currentFloor[d].errors || [];
-                if (eList.includes(myInfo.nick)) currentFloor[d].errors = eList.filter(e => e !== myInfo.nick);
-                else currentFloor[d].errors = [...eList, myInfo.nick];
+            // 在伺服器最新數據上重新計算變更 (確保 errors 列表、maybe 列表都是最新的)
+            const serverResult = getFloorUpdates(f, d, btn, currentFloor, myInfo.nick, myInfo.color, options.auto);
+            if (Object.keys(serverResult.updates).length === 0) return currentFloor;
+
+            // 應用變更到伺服器數據
+            Object.keys(serverResult.updates).forEach(key => {
+                const [idx, prop] = key.split('/');
+                currentFloor[idx][prop] = serverResult.updates[key];
+            });
+
+            // 原子化計算可能性
+            if (options.auto) {
+                calculateFloorMaybe(currentFloor, roomData.players || {});
             }
 
-            if (options.auto) getRecalcedFloor(currentFloor, roomData.players);
             return currentFloor;
         });
 
-        if (!result.committed) throw new Error('stolen');
-        
-        updateLastActive();
-        if (logMsg) log(logMsg, logType);
-
-    } catch (err) {
-        // 4. 回滾 (Rollback)
-        roomData.mapData = oldMapData;
-        renderGrid();
-        updatePathRecord();
-        if (err.message === 'stolen') {
-            log('這格剛剛被別人搶先標記了！已回滾。', 'error');
+        if (!txResult.committed) {
+            // C. 回滾 (Rollback)：如果被別人搶走了、或交易未成功
+            roomData.mapData[f] = backupFloor;
+            renderRoom();
+            log('標記衝突：該格已被其他玩家搶走', 'error');
         } else {
-            log('同步失敗: ' + err.message, 'error');
+            // 成功寫入
+            updateLastActive();
         }
+    } catch (err) {
+        console.error("Marker Transaction Error:", err);
+        // 回滾
+        roomData.mapData[f] = backupFloor;
+        renderRoom();
+        log('網路異常：已回滾操作', 'error');
     }
 }
 
-async function recalcFloorMaybe(f) {
-    const path = `rooms/${roomId}/mapData/${f}`;
-    await runTransaction(ref(db, path), (currentFloor) => {
-        if (!currentFloor) return;
-        return getRecalcedFloor(currentFloor, roomData.players);
-    });
-}
 
 function updateLastActive() {
     update(ref(db, `rooms/${roomId}/config`), { lastActive: serverTimestamp() });
