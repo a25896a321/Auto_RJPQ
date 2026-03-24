@@ -405,148 +405,11 @@ function renderGrid() {
     }
 }
 
-async function handleCellClick(f, d, btn) {
-    if (!roomId) return;
-    const cell = roomData.mapData[f][d];
-    const path = `rooms/${roomId}/mapData/${f}`;
-    const doorId = `door-${f}-${d}`;
-    const doorEl = document.getElementById(doorId);
-    if (!doorEl) return;
-
-    if (btn === 'left') {
-        const isDeselect = (cell.v === 1 && cell.owner === myInfo.nick);
-        const isClaim = (cell.v === 0);
-
-        if (isDeselect) {
-            // Optimistic UI: Remove correct class
-            doorEl.classList.remove('is-correct');
-            doorEl.style.background = '';
-            doorEl.querySelector('.door-icon').textContent = '';
-            doorEl.querySelector('.door-owner').textContent = '';
-
-            const updates = {};
-            updates[`${d}/v`] = 0;
-            updates[`${d}/owner`] = null;
-            updates[`${d}/ownerColor`] = null;
-            if (options.auto) {
-                for (let i = 0; i < 4; i++) {
-                    let eList = roomData.mapData[f][i].errors || [];
-                    updates[`${i}/errors`] = eList.filter(e => e !== myInfo.nick);
-                }
-            }
-            try {
-                await update(ref(db, path), updates);
-                log(`取消標記 L${10 - f}`, 'warn');
-            } catch (e) { renderGrid(); }
-        } else if (isClaim) {
-            // Optimistic UI: Add correct class
-            doorEl.classList.add('is-correct');
-            doorEl.style.background = `linear-gradient(135deg, ${myInfo.color}, #000)`;
-            const icon = doorEl.querySelector('.door-icon');
-            const owner = doorEl.querySelector('.door-owner');
-            icon.textContent = 'O'; icon.style.color = '#fff';
-            owner.textContent = myInfo.nick; owner.style.color = '#fff';
-
-            // Use transaction to ensure no race condition on the whole floor
-            try {
-                const floorRef = ref(db, path);
-                const result = await runTransaction(floorRef, (currentFloor) => {
-                    if (currentFloor) {
-                        const targetCell = currentFloor[d];
-                        // Rollback condition: occupied by someone else
-                        if (targetCell.v === 1 && targetCell.owner && targetCell.owner !== myInfo.nick) {
-                            return; // Abort transaction
-                        }
-
-                        // Clean up my previous owner marks on this floor (transactional)
-                        for (let i = 0; i < 4; i++) {
-                            if (currentFloor[i].owner === myInfo.nick) {
-                                currentFloor[i].v = 0;
-                                currentFloor[i].owner = null;
-                                currentFloor[i].ownerColor = null;
-                            }
-                        }
-
-                        // Set new mark
-                        currentFloor[d].v = 1;
-                        currentFloor[d].owner = myInfo.nick;
-                        currentFloor[d].ownerColor = myInfo.color;
-
-                        // Auto-mark logic within transaction
-                        if (options.auto) {
-                            for (let i = 0; i < 4; i++) {
-                                let eList = currentFloor[i].errors || [];
-                                if (i === d) {
-                                    currentFloor[i].errors = eList.filter(e => e !== myInfo.nick);
-                                } else {
-                                    if (!eList.includes(myInfo.nick)) {
-                                        currentFloor[i].errors = [...eList, myInfo.nick];
-                                    }
-                                }
-                            }
-                        }
-                        return currentFloor;
-                    }
-                    return currentFloor;
-                });
-
-                if (!result.committed) {
-                    // Rollback triggered
-                    showCollisionInfo();
-                    setTimeout(renderGrid, 100); // Small delay to let roomData sync if possible
-                } else {
-                    log(`標記 L${10 - f} 正確：第${d + 1}格`, 'ok');
-                    if (options.auto) recalcFloorMaybe(f);
-                }
-            } catch (err) {
-                console.error(err);
-                renderGrid();
-            }
-        }
-    } else if (btn === 'right') {
-        if (cell.v === 1) return;
-        let eList = cell.errors || [];
-        const updates = {};
-        if (eList.includes(myInfo.nick)) {
-            // Optimistic unmark error
-            doorEl.classList.remove('is-error');
-            doorEl.querySelector('.door-icon').textContent = '';
-            updates[`${d}/errors`] = eList.filter(e => e !== myInfo.nick);
-        } else {
-            // Optimistic mark error
-            if (eList.length >= 4) return;
-            doorEl.classList.add('is-error');
-            doorEl.querySelector('.door-icon').textContent = '✗';
-            doorEl.querySelector('.door-icon').style.color = '#ef4444';
-            updates[`${d}/errors`] = [...eList, myInfo.nick];
-        }
-
-        if (Object.keys(updates).length > 0) {
-            try {
-                await update(ref(db, path), updates);
-                if (options.auto) recalcFloorMaybe(f);
-            } catch (e) {
-                renderGrid();
-            }
-        }
-    }
-    updateLastActive();
-}
-
-function showCollisionInfo() {
-    const t = document.getElementById('collision-toast');
-    if (!t) return;
-    t.classList.add('show');
-    setTimeout(() => t.classList.remove('show'), 2000);
-}
-
-async function recalcFloorMaybe(f) {
-    const floor = roomData.mapData[f];
-    const playersInRoom = Object.values(roomData.players).map(p => p.nick);
+function getRecalcedFloor(floor, playersObj) {
+    const playersInRoom = Object.values(playersObj).map(p => p.nick);
     const botCount = 4 - playersInRoom.length;
     const allPlayers = [...playersInRoom, ...BOT_NAMES.slice(0, botCount)];
 
-    // Logic similar to worker.js but pushing back to Firebase
     const passOwners = new Set();
     floor.forEach(c => { if (c.v === 1 && c.owner) passOwners.add(c.owner); });
 
@@ -554,9 +417,8 @@ async function recalcFloorMaybe(f) {
     const unpassedIdx = [];
     floor.forEach((c, i) => { if (c.v !== 1) unpassedIdx.push(i); });
 
-    if (activePlayers.length === 0 || unpassedIdx.length === 0) return;
+    if (activePlayers.length === 0 || unpassedIdx.length === 0) return floor;
 
-    // Build possibility matrix
     const possible = {};
     activePlayers.forEach(p => {
         possible[p] = {};
@@ -565,11 +427,9 @@ async function recalcFloorMaybe(f) {
         });
     });
 
-    // Simple resolution logic
     let changed = true;
     while (changed) {
         changed = false;
-        // If a door has only one possible player, that player is assigned and removed from other doors
         unpassedIdx.forEach(d => {
             const potential = activePlayers.filter(p => possible[p][d]);
             if (potential.length === 1) {
@@ -579,7 +439,6 @@ async function recalcFloorMaybe(f) {
                 });
             }
         });
-        // If a player has only one possible door, that door is assigned and other players removed
         activePlayers.forEach(p => {
             const potentialDoors = unpassedIdx.filter(d => possible[p][d]);
             if (potentialDoors.length === 1) {
@@ -591,21 +450,144 @@ async function recalcFloorMaybe(f) {
         });
     }
 
-    const updates = {};
     unpassedIdx.forEach(d => {
         const pps = activePlayers.filter(p => possible[p][d]);
-        // If all active players are possible, it's non-informative, so clear it.
-        // Also if nobody is possible (shouldn't happen with correct logic), clear it.
         if (pps.length === activePlayers.length || pps.length === 0) {
-            updates[`${d}/maybe`] = [];
-            updates[`${d}/certain`] = false;
+            floor[d].maybe = [];
+            floor[d].certain = false;
         } else {
-            updates[`${d}/maybe`] = pps;
-            updates[`${d}/certain`] = pps.length === 1;
+            floor[d].maybe = pps;
+            floor[d].certain = pps.length === 1;
         }
     });
+    return floor;
+}
 
-    await update(ref(db, `rooms/${roomId}/mapData/${f}`), updates);
+async function handleCellClick(f, d, btn) {
+    if (!roomId) return;
+
+    // 1. 備份原始地圖資料 (Rollback 用)
+    const oldMapData = JSON.parse(JSON.stringify(roomData.mapData));
+    const floor = roomData.mapData[f];
+    const cell = floor[d];
+
+    // 2. 樂觀更新 (Optimistic UI)
+    let logMsg = '';
+    let logType = 'info';
+
+    if (btn === 'left') {
+        if (cell.v === 1 && cell.owner === myInfo.nick) {
+            // 取消標記
+            floor[d].v = 0; floor[d].owner = null; floor[d].ownerColor = null;
+            if (options.auto) {
+                for (let i = 0; i < 4; i++) {
+                    floor[i].errors = (floor[i].errors || []).filter(e => e !== myInfo.nick);
+                }
+            }
+            logMsg = `取消標記 L${10 - f}`; logType = 'warn';
+        } else if (cell.v === 0) {
+            // 標記正確
+            for (let i = 0; i < 4; i++) {
+                if (floor[i].owner === myInfo.nick) {
+                    floor[i].v = 0; floor[i].owner = null; floor[i].ownerColor = null;
+                }
+            }
+            floor[d].v = 1; floor[d].owner = myInfo.nick; floor[d].ownerColor = myInfo.color;
+            if (options.auto) {
+                for (let i = 0; i < 4; i++) {
+                    let eList = floor[i].errors || [];
+                    if (i === d) floor[i].errors = eList.filter(e => e !== myInfo.nick);
+                    else if (!eList.includes(myInfo.nick)) floor[i].errors = [...eList, myInfo.nick];
+                }
+            }
+            logMsg = `標記 L${10 - f} 正確：第${d + 1}格`; logType = 'ok';
+        }
+    } else if (btn === 'right') {
+        if (cell.v === 1) return;
+        let eList = cell.errors || [];
+        if (eList.includes(myInfo.nick)) {
+            floor[d].errors = eList.filter(e => e !== myInfo.nick);
+        } else {
+            if (eList.length < 4) floor[d].errors = [...eList, myInfo.nick];
+        }
+    }
+
+    if (options.auto) getRecalcedFloor(floor, roomData.players);
+
+    // 立即渲染前端
+    renderGrid();
+    updatePathRecord();
+
+    // 3. Firebase 同步與衝突檢測 (Rollback 機制)
+    const path = `rooms/${roomId}/mapData/${f}`;
+    try {
+        const result = await runTransaction(ref(db, path), (currentFloor) => {
+            if (!currentFloor) return;
+
+            // 衝突檢查: 如果別人已經搶先標記了這格為正確 (Left Click 且原本是 0)
+            if (btn === 'left' && cell.v === 0) {
+                if (currentFloor[d].v === 1 && currentFloor[d].owner !== myInfo.nick) {
+                    return; // 終止交易，表示被搶走了
+                }
+            }
+
+            // 在最新伺服器狀態上重複邏輯
+            if (btn === 'left') {
+                if (currentFloor[d].v === 1 && currentFloor[d].owner === myInfo.nick) {
+                    currentFloor[d].v = 0; currentFloor[d].owner = null; currentFloor[d].ownerColor = null;
+                    if (options.auto) {
+                        for (let i = 0; i < 4; i++) currentFloor[i].errors = (currentFloor[i].errors || []).filter(e => e !== myInfo.nick);
+                    }
+                } else {
+                    for (let i = 0; i < 4; i++) {
+                        if (currentFloor[i].owner === myInfo.nick) {
+                            currentFloor[i].v = 0; currentFloor[i].owner = null; currentFloor[i].ownerColor = null;
+                        }
+                    }
+                    currentFloor[d].v = 1; currentFloor[d].owner = myInfo.nick; currentFloor[d].ownerColor = myInfo.color;
+                    if (options.auto) {
+                        for (let i = 0; i < 4; i++) {
+                            let eList = currentFloor[i].errors || [];
+                            if (i === d) currentFloor[i].errors = eList.filter(e => e !== myInfo.nick);
+                            else if (!eList.includes(myInfo.nick)) currentFloor[i].errors = [...eList, myInfo.nick];
+                        }
+                    }
+                }
+            } else if (btn === 'right') {
+                if (currentFloor[d].v === 1) return currentFloor;
+                let eList = currentFloor[d].errors || [];
+                if (eList.includes(myInfo.nick)) currentFloor[d].errors = eList.filter(e => e !== myInfo.nick);
+                else currentFloor[d].errors = [...eList, myInfo.nick];
+            }
+
+            if (options.auto) getRecalcedFloor(currentFloor, roomData.players);
+            return currentFloor;
+        });
+
+        if (!result.committed) throw new Error('stolen');
+        
+        updateLastActive();
+        if (logMsg) log(logMsg, logType);
+
+    } catch (err) {
+        // 4. 回滾 (Rollback)
+        roomData.mapData = oldMapData;
+        renderGrid();
+        updatePathRecord();
+        if (err.message === 'stolen') {
+            log('這格剛剛被別人搶先標記了！已回滾。', 'error');
+        } else {
+            log('同步失敗: ' + err.message, 'error');
+        }
+    }
+}
+
+async function recalcFloorMaybe(f) {
+    const path = `rooms/${roomId}/mapData/${f}`;
+    await runTransaction(ref(db, path), (currentFloor) => {
+        if (!currentFloor) return;
+        return getRecalcedFloor(currentFloor, roomData.players);
+    });
 }
 
 function updateLastActive() {

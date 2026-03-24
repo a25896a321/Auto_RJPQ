@@ -433,27 +433,3 @@ body {
 .toast.show {
   transform: translateX(-50%) translateY(0);
 }
-
-.collision-toast {
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  background: rgba(0, 0, 0, 0.8);
-  color: #ff4444;
-  padding: 16px 32px;
-  border-radius: var(--radius);
-  font-weight: 900;
-  font-size: 18px;
-  border: 1px solid rgba(255, 68, 68, 0.3);
-  box-shadow: 0 0 30px rgba(255, 68, 68, 0.2);
-  z-index: 10001;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.3s ease;
-  white-space: nowrap;
-}
-
-.collision-toast.show {
-  opacity: 0.5;
-}
