@@ -1,6 +1,6 @@
 {
   "appInfo": {
-    "title": "Artale_RJPQ_oojump",
+    "title": "Artale_RJPQ_RTDB",
     "version": "2.0.0",
     "author": "oo_jump",
     "description": "Romeo and Juliet Party Quest 多人即時同步標記輔助工具"
@@ -30,7 +30,7 @@
   "uiStrings": {
     "zh-TW": {
       "lobby": {
-        "title": "⚔️ Artale_RJPQ_oojump",
+        "title": "⚔️ Artale_RJPQ_RTDB",
         "playerSection": "玩家設定",
         "nickPlaceholder": "輸入暱稱（中英數，最多10字）...",
         "createRoom": "🏠 建立房間",
@@ -67,13 +67,13 @@
     }
   },
   "firebaseConfig": {
-    "apiKey": "[YOUR_API_KEY]",
-    "authDomain": "[YOUR_AUTH_DOMAIN]",
-    "databaseURL": "[YOUR_DATABASE_URL]",
-    "projectId": "[YOUR_PROJECT_ID]",
-    "storageBucket": "[YOUR_STORAGE_BUCKET]",
-    "messagingSenderId": "[YOUR_MESSAGING_SENDER_ID]",
-    "appId": "[YOUR_APP_ID]",
-    "measurementId": "[YOUR_MEASUREMENT_ID]"
+    "apiKey": "[GCP_API_KEY]",
+    "authDomain": "auto-rjpq.firebaseapp.com",
+    "databaseURL": "https://auto-rjpq-default-rtdb.firebaseio.com",
+    "projectId": "auto-rjpq",
+    "storageBucket": "auto-rjpq.firebasestorage.app",
+    "messagingSenderId": "737332564229",
+    "appId": "1:737332564229:web:19489f6aa5cb183e91676c",
+    "measurementId": "G-9VECGGNYNF"
   }
 }

@@ -14,9 +14,7 @@
 | v2.3.0 | 2026-03-23 | **統計邏輯重構**：改用 Firebase 節點監聽（`rooms` 與 `presence`）來準確計算活躍房間與在線人數。 |
 | v2.4.0 | 2026-03-23 | **體驗優化**：新增房間內即時修改暱稱/顏色介面，移除重建按鈕，並實作自動分配預設顏色邏輯。 |
 | v2.5.0 | 2026-03-23 | **統計與維護強化**：實作即時樹狀監控統計活躍房間數與總在線玩家數，新增空房間自動清理邏輯，提供安全規則建議。 |
-| v2.6.0 | 2026-03-24 | **安全性更新**：實作金鑰管理機制，將 Firebase 設定移至外部檔案並透過 `.gitignore` 保護，新增環境變數佈署說明。 |
-| v2.7.0 | 2026-03-24 | **效能優化**：重構地圖渲染邏輯（initGrid/updateGrid），改為局部更新，解決多人同時操作時的按鈕鎖死問題。 |
-
+| v2.6.0 | 2026-03-24 | **效能優化**：重構地圖渲染邏輯，拆分為 `initGrid` 與 `updateGrid`，減少 DOM 重建次數，僅更新狀態與文字。 |
 
 
 
@@ -56,64 +54,24 @@
 
 ---
 
----
+## 🌐 串接步驟與說明 (GitHub)
 
-## 🔒 金鑰管理與安全性 (Firebase Configuration)
+本專案建議部署於 GitHub 存儲庫串聯，以實現自動部署。
 
-為了確保 Firebase 金鑰不被公開於 GitHub 等平台，本專案採用以下管理方式：
-
-### 1. 本地開發 (Local Development)
-- 敏感資訊已移出 `app_config.json`。
-- 本地請建立 `firebase_config.json` 檔案（此檔案已加入 `.gitignore`），格式如下：
-  ```json
-  {
-    "apiKey": "您的 API KEY",
-    "authDomain": "...",
-    "databaseURL": "...",
-    "projectId": "...",
-    "storageBucket": "...",
-    "messagingSenderId": "...",
-    "appId": "...",
-    "measurementId": "..."
-  }
-  ```
-
-### 2. 雲端佈署 (Cloudflare Pages)
-在 Cloudflare Pages 佈署時，請按照以下步驟操作以安全地注入金鑰：
-
-1. **進入專案設定**：在 Cloudflare Pages 儀表板，選擇您的專案 -> **Settings** -> **Environment variables**。
-2. **新增環境變數**：
-   - 名稱：`FIREBASE_CONFIG_JSON`
-   - 數值：貼上完整的 Firebase JSON 內容（同上述本地開發格式）。
-3. **修改佈署設定 (Build settings)**：
-   - **Build command**：`echo $FIREBASE_CONFIG_JSON > firebase_config.json`
-   - **Build output directory**：`/` (若專案在根目錄則保持預設)
-
----
-
-## 🌐 串接步驟與說明 (Cloudflare Pages)
-
-本專案建議佈署於 **Cloudflare Pages** 以獲得全球低延遲存取與環境變數支援。
-
-### 1. 上傳至 GitHub
-1. 在 GitHub 上建立儲存庫。
-2. 推送代碼：
+### 1. 建立 GitHub 儲存庫
+1. 在 GitHub 上建立一個新專案 `Artale_RJPQ_oojump`。
+2. 在本地終端執行：
    ```bash
+   git init
+   git remote add origin https://github.com/您的帳號/Artale_RJPQ_oojump.git
    git add .
-   git commit -m "Security: implement key management"
-   git push origin main
+   git commit -m "Initial commit for Firebase version"
+   git push -u origin main
    ```
 
-### 2. 串聯 Cloudflare Pages
-1. 登入 [Cloudflare Dashboard](https://dash.cloudflare.com/)。
-2. 點擊 **Workers & Pages** -> **Create application** -> **Pages** -> **Connect to Git**。
-3. 選擇您的 GitHub 儲存庫。
-4. **Build settings**：
-   - Framework preset: `None`
-   - Build command: `echo $FIREBASE_CONFIG_JSON > firebase_config.json`
-   - Build output directory: `(空)` 或 `/`
-5. 在 **Environment variables** 填入 `FIREBASE_CONFIG_JSON`。
-6. 點擊 **Save and Deploy**。
+### 2. 串連 GitHub Pages (自動佈署)
+1. 前往 **Settings -> Pages**。
+2. 在 **Build and deployment** -> **Source** 選擇 **GitHub Actions**。
 
 ---
 

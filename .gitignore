@@ -5,10 +5,7 @@
 # Project specific
 .gemini/
 *.log
-firebase_config.json
-.env
 
 # Windows
 Thumbs.db
 Desktop.ini
-
