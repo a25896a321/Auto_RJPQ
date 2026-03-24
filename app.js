@@ -534,7 +534,9 @@ function calculateFloorMaybe(floor, playersObj) {
 
     unpassedIdx.forEach(d => {
         const pps = activePlayers.filter(p => possible[p][d]);
-        if (pps.length === activePlayers.length || pps.length === 0) {
+        // 如果候選人名單跟房內總人數一樣，代表沒資訊，則清空標註
+        // 但如果候選人因為有人「已過關」或是「點錯格」而減少，就顯示剩餘的可能性
+        if (pps.length === allPlayers.length || pps.length === 0) {
             floor[d].maybe = [];
             floor[d].certain = false;
         } else {
