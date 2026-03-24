@@ -9,7 +9,6 @@ let myInfo = { nick: '', color: '#7B241C', textColor: '#FFFFFF', isHost: false }
 let roomData = null;
 let options = { auto: true, members: true, chat: true, seq: '1234' };
 let idleTimer = null;
-let gridInitialized = false;
 
 const BOT_NAMES = ['💀A', '💀B', '💀C'];
 
@@ -300,8 +299,7 @@ function renderRoom() {
     }
 
     renderPlayerList(roomData.players || {});
-    if (!gridInitialized) initGrid();
-    updateGrid();
+    renderGrid();
     updatePathRecord();
 
     // Check for closed room
@@ -347,155 +345,226 @@ function renderPlayerList(playersObj) {
     }
 }
 
-function initGrid() {
+function renderGrid() {
     const container = document.getElementById('map-grid');
     if (!container) return;
-    container.innerHTML = '';
-    for (let f = 0; f < 10; f++) {
-        const row = document.createElement('div');
-        row.className = 'floor-row';
-        row.innerHTML = `<div class="floor-label">L${10 - f}</div>`;
 
-        const grid = document.createElement('div');
-        grid.className = 'door-grid';
+    // Granular: build if empty, then just update children
+    if (container.children.length === 0) {
+        for (let f = 0; f < 10; f++) {
+            const row = document.createElement('div');
+            row.className = 'floor-row';
+            row.innerHTML = `<div class="floor-label">L${10 - f}</div>`;
 
-        for (let d = 0; d < 4; d++) {
-            const door = document.createElement('div');
-            door.id = `door-${f}-${d}`;
-            door.className = 'door';
-            door.innerHTML = `<div class="door-seq"></div><div class="door-icon"></div><div class="door-owner"></div>`;
+            const grid = document.createElement('div');
+            grid.className = 'door-grid';
 
-            door.onclick = () => handleCellClick(f, d, 'left');
-            door.oncontextmenu = (e) => { e.preventDefault(); handleCellClick(f, d, 'right'); };
-
-            grid.appendChild(door);
-        }
-        row.appendChild(grid);
-        container.appendChild(row);
-    }
-    gridInitialized = true;
-}
-
-function updateGrid() {
-    if (!roomData || !gridInitialized) return;
-    for (let f = 0; f < 10; f++) {
-        const floor = roomData.mapData[f];
-        floor.forEach((cell, d) => {
-            const door = document.getElementById(`door-${f}-${d}`);
-            if (!door) return;
-
-            // Reset classes
-            door.className = 'door';
-            
-            // Sequence
-            let seq = '';
-            if (options.seq === '1234') seq = (d + 1);
-            else if (options.seq === '4321') seq = (4 - d);
-            door.querySelector('.door-seq').textContent = seq;
-
-            const icon = door.querySelector('.door-icon');
-            const owner = door.querySelector('.door-owner');
-
-            // Reset styles
-            door.style.background = '';
-            icon.textContent = '';
-            icon.style.color = '';
-            owner.textContent = '';
-            owner.style.color = '';
-
-            if (cell.v === 1) {
-                door.classList.add('is-correct');
-                door.style.background = `linear-gradient(135deg, ${cell.ownerColor || '#888'}, #000)`;
-                icon.textContent = 'O'; icon.style.color = '#fff';
-                owner.textContent = cell.owner; owner.style.color = '#fff';
-            } else {
-                // Priority: Personal Errors -> Shared Certainty -> Shared Maybe
-                if (cell.errors && cell.errors.includes(myInfo.nick)) {
-                    door.classList.add('is-error');
-                    icon.textContent = '✗'; icon.style.color = '#ef4444';
-                    if (cell.maybe && cell.maybe.length > 0) owner.textContent = '(' + cell.maybe.join('/') + ')';
-                } else if (cell.certain) {
-                    door.classList.add('is-certain');
-                    const winner = (cell.maybe && cell.maybe.length > 0) ? cell.maybe[0] : '???';
-                    icon.textContent = '★'; icon.style.color = config?.gameSettings?.defaultColors?.[0] || '#f59e0b';
-                    owner.textContent = winner;
-                } else if (cell.maybe && cell.maybe.length > 0) {
-                    icon.textContent = '?'; icon.style.color = '#8b5cf6';
-                    owner.textContent = '(' + cell.maybe.join('/') + ')';
-                }
+            for (let d = 0; d < 4; d++) {
+                const door = document.createElement('div');
+                door.id = `door-${f}-${d}`;
+                door.className = 'door';
+                door.onclick = () => handleCellClick(f, d, 'left');
+                door.oncontextmenu = (e) => { e.preventDefault(); handleCellClick(f, d, 'right'); };
+                grid.appendChild(door);
             }
-        });
+            row.appendChild(grid);
+            container.appendChild(row);
+        }
+    }
+
+    for (let f = 0; f < 10; f++) {
+        for (let d = 0; d < 4; d++) {
+            renderCell(f, d);
+        }
     }
 }
+
+function renderCell(f, d) {
+    const door = document.getElementById(`door-${f}-${d}`);
+    if (!door) return;
+    const cell = roomData.mapData[f][d];
+
+    // Background sequence hint
+    let seq = '';
+    if (options.seq === '1234') seq = (d + 1);
+    else if (options.seq === '4321') seq = (4 - d);
+
+    // Only update internals if needed (Granular)
+    let iconHTML = '';
+    let ownerHTML = '';
+    let bgColor = '';
+    let textColor = '#fff';
+    let classes = ['door'];
+
+    if (cell.v === 1) {
+        classes.push('is-correct');
+        bgColor = `linear-gradient(135deg, ${cell.ownerColor || '#888'}, #000)`;
+        iconHTML = 'O';
+        ownerHTML = cell.owner;
+    } else {
+        if (cell.errors && cell.errors.includes(myInfo.nick)) {
+            classes.push('is-error');
+            iconHTML = '✗';
+            textColor = '#ef4444';
+            if (cell.maybe && cell.maybe.length > 0) ownerHTML = '(' + cell.maybe.join('/') + ')';
+        } else if (cell.certain) {
+            classes.push('is-certain');
+            const winner = (cell.maybe && cell.maybe.length > 0) ? cell.maybe[0] : '???';
+            iconHTML = '★';
+            textColor = config?.gameSettings?.defaultColors?.[0] || '#f59e0b';
+            ownerHTML = winner;
+        } else if (cell.maybe && cell.maybe.length > 0) {
+            iconHTML = '?';
+            textColor = '#8b5cf6';
+            ownerHTML = '(' + cell.maybe.join('/') + ')';
+        }
+    }
+
+    // Check if we actually need to change properties to minimize DOM thrashing
+    const currentHTML = `<div class="door-seq">${seq}</div><div class="door-icon" style="color: ${textColor}">${iconHTML}</div><div class="door-owner" style="color: ${textColor}">${ownerHTML}</div>`;
+    if (door.innerHTML !== currentHTML) {
+        door.innerHTML = currentHTML;
+    }
+    const currentClass = classes.join(' ');
+    if (door.className !== currentClass) {
+        door.className = currentClass;
+    }
+    if (door.style.background !== bgColor) {
+        door.style.background = bgColor;
+    }
+}
+
 
 async function handleCellClick(f, d, btn) {
     if (!roomId) return;
-    const cell = roomData.mapData[f][d];
-    const updates = {};
+    const oldFloor = JSON.parse(JSON.stringify(roomData.mapData[f]));
     const path = `rooms/${roomId}/mapData/${f}`;
 
+    // Optimistic Logic
     if (btn === 'left') {
+        const cell = roomData.mapData[f][d];
         if (cell.v === 1 && cell.owner === myInfo.nick) {
-            // Deselect
-            updates[`${d}/v`] = 0;
-            updates[`${d}/owner`] = null;
-            updates[`${d}/ownerColor`] = null;
-            // Clean up errors auto-marked for others (Since I'm no longer correct on this floor)
+            // Deselect locally
+            roomData.mapData[f][d].owner = null;
+            roomData.mapData[f][d].ownerColor = null;
+            roomData.mapData[f][d].v = 0;
             if (options.auto) {
                 for (let i = 0; i < 4; i++) {
                     let eList = roomData.mapData[f][i].errors || [];
-                    updates[`${i}/errors`] = eList.filter(e => e !== myInfo.nick);
+                    roomData.mapData[f][i].errors = eList.filter(e => e !== myInfo.nick);
                 }
             }
-            log(`取消標記 L${10 - f}`, 'warn');
         } else if (cell.v === 0) {
-            // Select as Correct
+            // Select correctly locally
             for (let i = 0; i < 4; i++) {
-                // Clear my previous ownership and error on this floor completely to recalculate
                 if (roomData.mapData[f][i].owner === myInfo.nick) {
-                    updates[`${i}/v`] = 0;
-                    updates[`${i}/owner`] = null;
-                    updates[`${i}/ownerColor`] = null;
+                    roomData.mapData[f][i].v = 0;
+                    roomData.mapData[f][i].owner = null;
+                    roomData.mapData[f][i].ownerColor = null;
                 }
             }
-            updates[`${d}/v`] = 1;
-            updates[`${d}/owner`] = myInfo.nick;
-            updates[`${d}/ownerColor`] = myInfo.color;
-
-            // Auto-mark logic: mark others as errors, and ensure current d is NOT an error
+            roomData.mapData[f][d].v = 1;
+            roomData.mapData[f][d].owner = myInfo.nick;
+            roomData.mapData[f][d].ownerColor = myInfo.color;
             if (options.auto) {
                 for (let i = 0; i < 4; i++) {
                     let eList = roomData.mapData[f][i].errors || [];
                     if (i === d) {
-                        // Current door cannot be an error since I marked it correct
-                        updates[`${i}/errors`] = eList.filter(e => e !== myInfo.nick);
+                        roomData.mapData[f][i].errors = eList.filter(e => e !== myInfo.nick);
                     } else {
-                        // Other doors are errors for me
-                        if (!eList.includes(myInfo.nick)) {
-                            updates[`${i}/errors`] = [...eList, myInfo.nick];
-                        }
+                        if (!eList.includes(myInfo.nick)) roomData.mapData[f][i].errors = [...eList, myInfo.nick];
                     }
                 }
             }
-            log(`標記 L${10 - f} 正確：第${d + 1}格`, 'ok');
+        } else {
+            // Other's correct - can't click
+            return;
         }
     } else if (btn === 'right') {
-        if (cell.v === 1) return;
-        let eList = cell.errors || [];
+        if (roomData.mapData[f][d].v === 1) return;
+        let eList = roomData.mapData[f][d].errors || [];
         if (eList.includes(myInfo.nick)) {
-            updates[`${d}/errors`] = eList.filter(e => e !== myInfo.nick);
+            roomData.mapData[f][d].errors = eList.filter(e => e !== myInfo.nick);
         } else {
-            if (eList.length >= 4) return; // Should not happen
-            updates[`${d}/errors`] = [...eList, myInfo.nick];
+            roomData.mapData[f][d].errors = [...eList, myInfo.nick];
         }
     }
 
-    if (Object.keys(updates).length > 0) {
-        await update(ref(db, path), updates);
-        if (options.auto) recalcFloorMaybe(f);
-        updateLastActive();
+    // Immediately render locally (Optimistic)
+    for (let i = 0; i < 4; i++) renderCell(f, i);
+    updatePathRecord();
+
+    // Firebase Atomic Update (Conflict Check)
+    try {
+        const result = await runTransaction(ref(db, path), (floor) => {
+            if (!floor) return null;
+            
+            // Check for conflict: if we are trying to claim a cell (v=1) that belongs to someone else
+            if (btn === 'left' && roomData.mapData[f][d].v === 1) {
+                if (floor[d].v === 1 && floor[d].owner && floor[d].owner !== myInfo.nick) {
+                    // Conflict found: Someone else took it
+                    return; // ABORT transaction
+                }
+            }
+            
+            // Apply the updates that we already calculated locally to the server version
+            // Actually it's easier to just take the local floor and return it, 
+            // but we should compute from current server state 'floor'
+            
+            if (btn === 'left') {
+                const cell = floor[d];
+                if (cell.v === 1 && cell.owner === myInfo.nick) {
+                    floor[d].owner = null; floor[d].ownerColor = null; floor[d].v = 0;
+                    if (options.auto) {
+                        for (let i = 0; i < 4; i++) floor[i].errors = (floor[i].errors || []).filter(e => e !== myInfo.nick);
+                    }
+                } else if (cell.v === 0) {
+                    for (let i = 0; i < 4; i++) {
+                        if (floor[i].owner === myInfo.nick) { floor[i].v = 0; floor[i].owner = null; floor[i].ownerColor = null; }
+                    }
+                    floor[d].v = 1; floor[d].owner = myInfo.nick; floor[d].ownerColor = myInfo.color;
+                    if (options.auto) {
+                        for (let i = 0; i < 4; i++) {
+                            let el = floor[i].errors || [];
+                            if (i === d) { floor[i].errors = el.filter(e => e !== myInfo.nick); }
+                            else if (!el.includes(myInfo.nick)) { floor[i].errors = [...el, myInfo.nick]; }
+                        }
+                    }
+                }
+            } else if (btn === 'right') {
+                if (floor[d].v === 1) return floor;
+                let el = floor[d].errors || [];
+                if (el.includes(myInfo.nick)) floor[d].errors = el.filter(e => e !== myInfo.nick);
+                else floor[d].errors = [...el, myInfo.nick];
+            }
+            
+            return floor;
+        });
+
+        if (!result.committed) {
+            // ROLLBACK
+            roomData.mapData[f] = oldFloor;
+            for (let i = 0; i < 4; i++) renderCell(f, i);
+            updatePathRecord();
+            toast("此格有人！重複！", "conflict");
+        } else {
+            // LOG and Post-Process
+            if (btn === 'left') {
+                const wasSelecting = roomData.mapData[f][d].v === 1;
+                log(wasSelecting ? `標記 L${10 - f} 正確：第${d + 1}格` : `取消標記 L${10 - f}`, wasSelecting ? 'ok' : 'warn');
+            }
+            if (options.auto) recalcFloorMaybe(f);
+            updateLastActive();
+        }
+    } catch (e) {
+        console.error(e);
+        // Rollback on error too
+        roomData.mapData[f] = oldFloor;
+        for (let i = 0; i < 4; i++) renderCell(f, i);
+        updatePathRecord();
     }
 }
+
 
 async function recalcFloorMaybe(f) {
     const floor = roomData.mapData[f];
@@ -592,7 +661,6 @@ function leaveRoom() {
         }
 
         roomId = null;
-        gridInitialized = false;
         window.location.hash = '';
         document.getElementById('screen-lobby').style.display = 'flex';
         document.getElementById('screen-room').style.display = 'none';
@@ -715,11 +783,14 @@ window.app = {
     }
 };
 
-function toast(msg) {
+function toast(msg, cls = '') {
     const t = document.getElementById('toast');
     t.textContent = msg;
-    t.classList.add('show');
-    setTimeout(() => t.classList.remove('show'), 2000);
+    t.className = 'toast show ' + cls;
+    setTimeout(() => {
+        t.classList.remove('show');
+    }, 2000);
 }
+
 
 init();

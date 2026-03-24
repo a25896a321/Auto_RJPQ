@@ -433,3 +433,9 @@ body {
 .toast.show {
   transform: translateX(-50%) translateY(0);
 }
+
+.toast.conflict {
+  background: rgba(239, 68, 68, 0.5); /* red with 50% transparency */
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
