@@ -416,39 +416,62 @@ function getFloorUpdates(f, d, btn, floorData, currentNick, currentColor, auto) 
 
     if (btn === 'left') {
         if (cell.v === 1 && cell.owner === currentNick) {
-            // 取消標記
+            // 本人取消標記
             updates[`${d}/v`] = 0;
             updates[`${d}/owner`] = null;
             updates[`${d}/ownerColor`] = null;
             if (auto) {
+                // 清理此玩家在整層樓產生的所有自動 Errors
                 for (let i = 0; i < 4; i++) {
+                    const errKey = `${i}/errors`;
                     let eList = floorData[i].errors || [];
-                    updates[`${i}/errors`] = eList.filter(e => e !== currentNick);
+                    updates[errKey] = eList.filter(e => e !== currentNick);
                 }
             }
             msg = `取消標記 L${10 - f}`;
             type = 'warn';
-        } else if (cell.v === 0) {
-            // 標記為正確
+        } else {
+            // 標記為正確 (點擊新格：不論是換位、或取代他人)
+            
+            // 1. 遍歷整層，清理所有原本存在的正確格及其對應的自動 Errors
             for (let i = 0; i < 4; i++) {
-                if (floorData[i].owner === currentNick) {
+                if (floorData[i].v === 1) {
+                    const prevNick = floorData[i].owner;
+                    
+                    // 清除原本格子的 Correct 狀態
                     updates[`${i}/v`] = 0;
                     updates[`${i}/owner`] = null;
                     updates[`${i}/ownerColor`] = null;
+                    
+                    // 清除該舊 OWNER 在整層產生的所有 Errors
+                    if (auto && prevNick) {
+                        for (let k = 0; k < 4; k++) {
+                            const errKey = `${k}/errors`;
+                            // 優先從本次 updates 中讀取已有的變更，否則從 floorData 讀取
+                            let currentEList = updates[errKey] !== undefined ? updates[errKey] : (floorData[k].errors || []);
+                            updates[errKey] = currentEList.filter(e => e !== prevNick);
+                        }
+                    }
                 }
             }
+
+            // 2. 設置新玩家為當前正確格
             updates[`${d}/v`] = 1;
             updates[`${d}/owner`] = currentNick;
             updates[`${d}/ownerColor`] = currentColor;
 
+            // 3. 自動設定新玩家的 Errors (非正確格的其他格)
             if (auto) {
                 for (let i = 0; i < 4; i++) {
-                    let eList = floorData[i].errors || [];
+                    const errKey = `${i}/errors`;
+                    let currentEList = updates[errKey] !== undefined ? updates[errKey] : (floorData[i].errors || []);
                     if (i === d) {
-                        updates[`${i}/errors`] = eList.filter(e => e !== currentNick);
+                        // 正確格不應標記自己為 Error
+                        updates[errKey] = currentEList.filter(e => e !== currentNick);
                     } else {
-                        if (!eList.includes(currentNick)) {
-                            updates[`${i}/errors`] = [...eList, currentNick];
+                        // 其他格標記自己為 Error
+                        if (!currentEList.includes(currentNick)) {
+                            updates[errKey] = [...currentEList, currentNick];
                         }
                     }
                 }
@@ -565,13 +588,6 @@ async function handleCellClick(f, d, btn) {
         const txResult = await runTransaction(floorRef, (currentFloor) => {
             if (!currentFloor) return; // 房間可能已被刪除
 
-            // 衝突判定：如果是左鍵想標正確格，但伺服器上該格 L 已經被別人標走了 (v=1 且 owner 不同)
-            if (btn === 'left' && updates[`${d}/v`] === 1) {
-                if (currentFloor[d].v === 1 && currentFloor[d].owner !== myInfo.nick) {
-                    // 放棄交易，觸發 committed = false
-                    return; 
-                }
-            }
 
             // 在伺服器最新數據上重新計算變更 (確保 errors 列表、maybe 列表都是最新的)
             const serverResult = getFloorUpdates(f, d, btn, currentFloor, myInfo.nick, myInfo.color, options.auto);
