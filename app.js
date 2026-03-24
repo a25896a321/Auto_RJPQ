@@ -17,6 +17,18 @@ async function init() {
     try {
         const resp = await fetch('app_config.json');
         config = await resp.json();
+
+        // Try to load local secret config (for development/ignored files)
+        try {
+            const secResp = await fetch('firebase_config.json');
+            if (secResp.ok) {
+                const sec = await secResp.json();
+                config.firebaseConfig = { ...config.firebaseConfig, ...sec };
+            }
+        } catch (err) {
+            // Probably doesn't exist, which is fine for production replacement
+        }
+
         setupUIStrings();
 
         // Firebase Init
