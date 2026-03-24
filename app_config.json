@@ -67,7 +67,7 @@
     }
   },
   "firebaseConfig": {
-    "apiKey": "[GCP_API_KEY]",
+    "apiKey": "AIzaSyBlyY4wFOKHnI9c2oEYO5Khh8Xo-Pba-ZE",
     "authDomain": "auto-rjpq.firebaseapp.com",
     "databaseURL": "https://auto-rjpq-default-rtdb.firebaseio.com",
     "projectId": "auto-rjpq",
