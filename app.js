@@ -246,6 +246,7 @@ function joinRoomStream(rid) {
         const data = snap.val();
         if (!data) return;
         const entries = Object.values(data);
+        entries.sort((a, b) => a.time - b.time);
         entries.forEach(e => {
             if (e.time > lastLogTime) {
                 log(e.msg, e.type);
@@ -254,7 +255,47 @@ function joinRoomStream(rid) {
         });
     });
 
-    // Subscribe
+    // 4. 聊天室同步監聽 (Chat Subscription)
+    const chatRef = ref(db, `rooms/${rid}/chat`);
+    onValue(chatRef, (snap) => {
+        const data = snap.val();
+        if (!data) return;
+        const msgList = document.getElementById('chat-msgs');
+        if (!msgList) return;
+        msgList.innerHTML = '';
+        
+        // 轉換為陣列並按時間排序
+        const entries = Object.values(data).sort((a,b) => a.time - b.time);
+        
+        // 僅顯示最後 50 則訊息
+        entries.slice(-50).forEach(c => {
+            const div = document.createElement('div');
+            div.className = 'chat-msg';
+            div.innerHTML = `<span style="color:${c.color || '#fff'}; font-weight:bold;">${c.nick}:</span> <span>${c.msg}</span>`;
+            msgList.appendChild(div);
+        });
+        // 自動捲動到底部
+        msgList.scrollTop = msgList.scrollHeight;
+    });
+
+    // 1. 強化連線狀態與斷線重連邏輯 (Presence Logic)
+    // 防止玩家因為網路閃斷被 onDisconnect 刪除後，無法自動回到房間列表
+    const presenceRef = ref(db, `rooms/${rid}/players/${myUid}`);
+    onValue(ref(db, '.info/connected'), (snap) => {
+        if (snap.val() === true) {
+            // 每次重新連線到 Firebase，都要重新註冊斷線刪除邏輯
+            onDisconnect(presenceRef).remove();
+            // 並重新寫入個人資訊確保自己在成員名單中
+            if (myInfo && roomId === rid) {
+                set(presenceRef, myInfo);
+            }
+            log(`連線狀態：已連線`, 'ok');
+        } else {
+            log(`連線狀態：中斷，正在嘗試重連...`, 'warn');
+        }
+    });
+
+    // 2. 房間資料監聽
     onValue(ref(db, `rooms/${rid}`), (snap) => {
         if (!snap.exists()) {
             if (roomId) {
@@ -266,11 +307,16 @@ function joinRoomStream(rid) {
         roomData = snap.val();
         options = roomData.config.options;
         renderRoom();
-        resetIdleTimer();
+        // 注意：這裡不再自動 resetIdleTimer，改由使用者實際操作觸發
     });
 
-    // Auto remove on disconnect
-    onDisconnect(ref(db, `rooms/${rid}/players/${myUid}`)).remove();
+    // 3. 全域活動監聽：只要在房間內有移動滑鼠或按鍵，就重置閒置計時
+    const activityHandler = () => resetIdleTimer();
+    window.addEventListener('mousemove', activityHandler);
+    window.addEventListener('keydown', activityHandler);
+    // 存儲 Handler 以便離開時移除
+    window._activityHandler = activityHandler;
+    resetIdleTimer();
 
     log(`連線成功！房號: ${rid}`, 'ok');
 }
@@ -549,6 +595,7 @@ function calculateFloorMaybe(floor, playersObj) {
 
 async function handleCellClick(f, d, btn) {
     if (!roomId || !roomData) return;
+    resetIdleTimer(); // 點擊格子視為互動
 
     // A. 樂觀 UI 更新：先備份當前樓層狀態
     const backupFloor = JSON.parse(JSON.stringify(roomData.mapData[f]));
@@ -637,6 +684,10 @@ function resetIdleTimer() {
 }
 
 function leaveRoom() {
+    if (window._activityHandler) {
+        window.removeEventListener('mousemove', window._activityHandler);
+        window.removeEventListener('keydown', window._activityHandler);
+    }
     if (roomId) {
         // Need to check players count before leaving
         const players = roomData ? roomData.players : {};
@@ -729,6 +780,7 @@ window.app = {
     sendChat: () => {
         const inp = document.getElementById('chat-inp');
         if (!inp.value.trim()) return;
+        resetIdleTimer(); // 發送對話視為互動
         push(ref(db, `rooms/${roomId}/chat`), {
             nick: myInfo.nick,
             color: myInfo.color,
