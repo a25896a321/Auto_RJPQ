@@ -1,5 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { getDatabase, ref, set, get, onValue, update, onDisconnect, push, serverTimestamp, remove, runTransaction } from "firebase/database";
+import { getAuth, signInAnonymously } from "firebase/auth";
 
 let config = null;
 let db = null;
@@ -23,6 +24,11 @@ async function init() {
         const app = initializeApp(config.firebaseConfig);
         db = getDatabase(app);
 
+        // Firebase Anonymous Auth — 取得合法 UID 供 Rules 驗證
+        const auth = getAuth(app);
+        const credential = await signInAnonymously(auth);
+        myUid = credential.user.uid;
+
         // Real-time server stats and cleanup of ghost empty rooms
         onValue(ref(db, 'rooms'), (snap) => {
             const rooms = snap.val() || {};
@@ -42,10 +48,6 @@ async function init() {
             document.getElementById('stat-rooms').textContent = validRoomCount;
             document.getElementById('stat-users').textContent = totalPlayers;
         });
-
-        // Local state UID
-        myUid = localStorage.getItem('rjpq_uid') || 'u' + Math.random().toString(36).substring(2, 9);
-        localStorage.setItem('rjpq_uid', myUid);
 
         // Sync sequences in dropdown
         const seqSel = document.getElementById('cr-seq');

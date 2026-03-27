@@ -1,18 +1,32 @@
 {
   "rules": {
     "rooms": {
-      ".read": "true",
+      ".read": "auth != null",
       "$rid": {
-        ".write": "!data.exists() || data.child('players').hasChild('YOUR_UID_PLACEHOLDER') || auth != null",
         "config": {
+          ".read": "auth != null",
+          ".write": "auth != null && (!data.exists() || data.child('hostId').val() === auth.uid)",
           "password": {
-             ".read": "false"
+            ".read": "auth != null && data.parent().parent().child('players').hasChild(auth.uid)"
           }
         },
         "players": {
+          ".read": "auth != null",
           "$uid": {
-            ".write": "!data.exists() || !newData.exists()"
+            ".write": "auth != null && (!data.exists() || $uid === auth.uid || data.parent().parent().child('config/hostId').val() === auth.uid)"
           }
+        },
+        "mapData": {
+          ".read": "auth != null",
+          ".write": "auth != null && data.parent().child('players').hasChild(auth.uid)"
+        },
+        "logs": {
+          ".read": "auth != null",
+          ".write": "auth != null && data.parent().child('players').hasChild(auth.uid)"
+        },
+        "chat": {
+          ".read": "auth != null",
+          ".write": "auth != null && data.parent().child('players').hasChild(auth.uid)"
         }
       }
     }
