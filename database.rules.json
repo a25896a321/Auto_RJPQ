@@ -3,9 +3,9 @@
     "rooms": {
       ".read": "auth != null",
       "$rid": {
+        ".write": "auth != null && (!data.exists() || data.child('players').hasChild(auth.uid) || data.child('config/hostId').val() === auth.uid)",
         "config": {
           ".read": "auth != null",
-          ".write": "auth != null && (!data.exists() || data.child('hostId').val() === auth.uid)",
           "password": {
             ".read": "auth != null && data.parent().parent().child('players').hasChild(auth.uid)"
           }
@@ -13,20 +13,17 @@
         "players": {
           ".read": "auth != null",
           "$uid": {
-            ".write": "auth != null && (!data.exists() || $uid === auth.uid || data.parent().parent().child('config/hostId').val() === auth.uid)"
+            ".write": "auth != null && ($uid === auth.uid || data.parent().parent().child('config/hostId').val() === auth.uid)"
           }
         },
         "mapData": {
-          ".read": "auth != null",
-          ".write": "auth != null && data.parent().child('players').hasChild(auth.uid)"
+          ".read": "auth != null"
         },
         "logs": {
-          ".read": "auth != null",
-          ".write": "auth != null && data.parent().child('players').hasChild(auth.uid)"
+          ".read": "auth != null"
         },
         "chat": {
-          ".read": "auth != null",
-          ".write": "auth != null && data.parent().child('players').hasChild(auth.uid)"
+          ".read": "auth != null"
         }
       }
     }
