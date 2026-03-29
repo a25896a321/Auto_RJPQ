@@ -10,6 +10,10 @@ let myInfo = { nick: '', color: '#7B241C', textColor: '#FFFFFF', isHost: false }
 let roomData = null;
 let options = { auto: true, members: true, chat: true, seq: '1234' };
 let idleTimer = null;
+let unsubConfig = null;
+let unsubPlayers = null;
+let unsubMapData = null;
+let unsubChat = null;
 
 const BOT_NAMES = ['💀A', '💀B', '💀C'];
 
@@ -78,9 +82,6 @@ async function init() {
             showLanding(hash);
         }
 
-        // 啟動時清理空房間
-        cleanupEmptyRooms();
-
         log('系統已就緒，請建立或加入房間。', 'ok');
     } catch (e) {
         console.error(e);
@@ -98,34 +99,6 @@ function setupUIStrings() {
     document.getElementById('txt-btn-create').textContent = s.buttons.create;
     document.getElementById('txt-btn-join').textContent = s.buttons.join;
     document.getElementById('txt-stats-title').textContent = s.lobby.statsTitle;
-}
-
-// ===== AUTO CLEANUP =====
-async function cleanupEmptyRooms() {
-    try {
-        const snap = await get(ref(db, 'rooms'));
-        if (!snap.exists()) return;
-        
-        const rooms = snap.val();
-        let deletedCount = 0;
-        const updates = {};
-        
-        for (const [rid, room] of Object.entries(rooms)) {
-            const players = room.players || {};
-            if (Object.keys(players).length === 0) {
-                updates[`rooms/${rid}`] = null;
-                deletedCount++;
-            }
-        }
-        
-        if (deletedCount > 0) {
-            updates['stats/rooms'] = increment(-deletedCount);
-            await update(ref(db), updates);
-            log(`(系統) 已自動清理 ${deletedCount} 個無人存活的幽靈房間。`, 'warn');
-        }
-    } catch (e) {
-        console.warn("Cleanup error:", e);
-    }
 }
 
 // ===== CORE ACTIONS =====
@@ -221,6 +194,14 @@ async function doJoin() {
         if (!snapshot.exists()) return alert('房間不存在。');
 
         const data = snapshot.val();
+        
+        if (data.config && data.config.hostId && !data.players?.[data.config.hostId]) {
+            // 房主已經離開或未建立完整狀態，為幽靈房間
+            remove(ref(db, `rooms/${targetRoomId}`));
+            update(ref(db, 'stats'), { rooms: increment(-1) });
+            return alert('房主已離線，該房間已失效並被清理。');
+        }
+
         if (data.config.password && data.config.password !== pw) return alert('密碼錯誤。');
 
         const playerArray = Object.values(data.players || {});
@@ -279,55 +260,33 @@ function joinRoomStream(rid) {
         document.getElementById('rm-txt-sw').style.background = e.target.value;
     });
 
-    // Logs subscription — 只取最新 20 筆，減少下載量
-    const logsRef = query(ref(db, `rooms/${rid}/logs`), limitToLast(20));
-    let lastLogTime = Date.now();
-    onValue(logsRef, (snap) => {
-        const data = snap.val();
-        if (!data) return;
-        const entries = Object.values(data);
-        entries.sort((a, b) => a.time - b.time);
-        entries.forEach(e => {
-            if (e.time > lastLogTime) {
-                log(e.msg, e.type);
-                lastLogTime = e.time;
-            }
-        });
-    });
+    roomData = { config: null, players: {}, mapData: null };
 
-    // 4. 聊天室同步監聽 — 只取最新 20 筆，減少下載量
+    // 聊天室監聽
+    if (unsubChat) unsubChat();
     const chatRef = query(ref(db, `rooms/${rid}/chat`), limitToLast(20));
-    onValue(chatRef, (snap) => {
+    unsubChat = onValue(chatRef, (snap) => {
         const data = snap.val();
-        if (!data) return;
         const msgList = document.getElementById('chat-msgs');
         if (!msgList) return;
         msgList.innerHTML = '';
+        if (!data) return;
         
-        // 轉換為陣列並按時間排序
         const entries = Object.values(data).sort((a,b) => a.time - b.time);
-        
-        // 僅顯示最後 50 則訊息
         entries.slice(-50).forEach(c => {
             const div = document.createElement('div');
             div.className = 'chat-msg';
             div.innerHTML = `<span style="color:${c.color || '#fff'}; font-weight:bold;">${c.nick}:</span> <span>${c.msg}</span>`;
             msgList.appendChild(div);
         });
-        // 自動捲動到底部
         msgList.scrollTop = msgList.scrollHeight;
     });
 
-    // 1. 強化連線狀態與斷線重連邏輯 (Presence Logic)
-    // 防止玩家因為網路閃斷被 onDisconnect 刪除後，無法自動回到房間列表
+    // 連線狀態與斷線重連邏輯
     const presenceRef = ref(db, `rooms/${rid}/players/${myUid}`);
-    const statsRef = ref(db, 'stats');
     onValue(ref(db, '.info/connected'), (snap) => {
         if (snap.val() === true) {
-            // 每次重新連線到 Firebase，都要重新註冊斷線刪除邏輯
             onDisconnect(presenceRef).remove();
-            // 斷線時不再扣減 stats/users，因為已由 presence/${myUid} 全域處理
-            // 並重新寫入個人資訊確保自己在成員名單中
             if (myInfo && roomId === rid) {
                 set(presenceRef, myInfo);
             }
@@ -337,30 +296,46 @@ function joinRoomStream(rid) {
         }
     });
 
-    // 2. 房間資料監聽
-    onValue(ref(db, `rooms/${rid}`), (snap) => {
+    // 1. Config 監聽 (房名、密碼等)
+    if (unsubConfig) unsubConfig();
+    unsubConfig = onValue(ref(db, `rooms/${rid}/config`), (snap) => {
         if (!snap.exists()) {
-            if (roomId) {
-                alert('房間已被刪除或失效。');
-                leaveRoom();
+            if (roomId === rid) {
+                alert('房間已被刪除或失效。'); leaveRoom();
             }
             return;
         }
-        roomData = snap.val();
+        roomData.config = snap.val();
+        options = roomData.config.options;
+        renderRoom();
+    });
+
+    // 2. Players 監聽 (人員進出防呆)
+    if (unsubPlayers) unsubPlayers();
+    unsubPlayers = onValue(ref(db, `rooms/${rid}/players`), (snap) => {
+        roomData.players = snap.val() || {};
         
-        // 若房內已無任何真實玩家，直接關閉房間 (防呆清理機制)
-        const currentPlayers = Object.keys(roomData.players || {});
-        if (currentPlayers.length === 0 && roomId === rid) {
-            // 如果我是最後一個剛剛被 onDisconnect 刪除或退出的，但介面還在
-            remove(ref(db, `rooms/${roomId}`));
-            update(ref(db, 'stats'), { rooms: increment(-1) });
+        // 幽靈房間檢查：Host是否不在名單中
+        const isHostGone = roomData.config && roomData.config.hostId && !Object.keys(roomData.players).includes(roomData.config.hostId);
+        if (isHostGone && roomId === rid) {
+            const remainingUids = Object.keys(roomData.players).sort();
+            if (remainingUids.length > 0 && remainingUids[0] === myUid) {
+                // 由留下的第一位玩家負責清除資料庫的幽靈房間
+                remove(ref(db, `rooms/${roomId}`));
+                update(ref(db, 'stats'), { rooms: increment(-1) });
+            }
+            alert("因房主已離開或斷線，房間已自動解散。");
             leaveRoom();
             return;
         }
-
-        options = roomData.config.options;
         renderRoom();
-        // 注意：這裡不再自動 resetIdleTimer，改由使用者實際操作觸發
+    });
+
+    // 3. MapData 監聽 (精準地圖)
+    if (unsubMapData) unsubMapData();
+    unsubMapData = onValue(ref(db, `rooms/${rid}/mapData`), (snap) => {
+        roomData.mapData = snap.val() || null;
+        renderRoom();
     });
 
     // 3. 全域活動監聽：只要在房間內有移動滑鼠或按鍵，就重置閒置計時
@@ -375,7 +350,7 @@ function joinRoomStream(rid) {
 }
 
 function renderRoom() {
-    if (!roomData) return;
+    if (!roomData || !roomData.config || !roomData.mapData) return;
     const players = Object.values(roomData.players || {});
     const isHost = roomData.config.hostId === myUid;
     myInfo.isHost = isHost;
@@ -733,6 +708,11 @@ function resetIdleTimer() {
 }
 
 function leaveRoom() {
+    if (unsubConfig) { unsubConfig(); unsubConfig = null; }
+    if (unsubPlayers) { unsubPlayers(); unsubPlayers = null; }
+    if (unsubMapData) { unsubMapData(); unsubMapData = null; }
+    if (unsubChat) { unsubChat(); unsubChat = null; }
+
     if (window._activityHandler) {
         window.removeEventListener('mousemove', window._activityHandler);
         window.removeEventListener('keydown', window._activityHandler);
@@ -765,28 +745,19 @@ function leaveRoom() {
 async function resetAll() {
     if (!confirm('確定清空所有標記？')) return;
 
-    // Log everyone's path to room log (Shared)
+    // Log everyone's path locally
     const players = Object.values(roomData.players || {});
     players.forEach(p => {
         let pRecord = getPathRecordText(p.nick);
-        sendRoomLog(`[系統] 玩家 ${p.nick} 的紀錄: ${pRecord}`, 'info');
+        log(`[系統] 玩家 ${p.nick} 的紀錄: ${pRecord}`, 'info');
     });
 
-    sendRoomLog('已由房主清空所有標記', 'warn');
+    log('已由房主清空所有標記', 'warn');
 
     const initialMap = Array(10).fill(null).map(() =>
         Array(4).fill(null).map(() => ({ v: 0, owner: null, errors: [], o_errors: [], maybe: [], certain: false }))
     );
     await update(ref(db, `rooms/${roomId}`), { mapData: initialMap });
-}
-
-function sendRoomLog(msg, type = 'info') {
-    if (!roomId) return;
-    push(ref(db, `rooms/${roomId}/logs`), {
-        msg,
-        type,
-        time: serverTimestamp()
-    });
 }
 
 // ===== UTILS =====
@@ -871,8 +842,6 @@ window.app = {
     kickPlayer: async (uid, nick) => {
         if (!confirm(`確定要將 ${nick} 移出房間嗎？`)) return;
         await remove(ref(db, `rooms/${roomId}/players/${uid}`));
-        // 被踢玩家的 users -1
-        await update(ref(db, 'stats'), { users: increment(-1) });
         log(`已將 ${nick} 移出房間`, 'warn');
     }
 };
