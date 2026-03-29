@@ -67,13 +67,13 @@
     }
   },
   "firebaseConfig": {
-    "apiKey": "AIzaSyBlyY4wFOKHnI9c2oEYO5Khh8Xo-Pba-ZE",
-    "authDomain": "auto-rjpq.firebaseapp.com",
-    "databaseURL": "https://auto-rjpq-default-rtdb.firebaseio.com",
-    "projectId": "auto-rjpq",
-    "storageBucket": "auto-rjpq.firebasestorage.app",
-    "messagingSenderId": "737332564229",
-    "appId": "1:737332564229:web:19489f6aa5cb183e91676c",
+    "apiKey": "AIzaSyBxIoJiI2hL2AIl9yy5V3LW1pYT3RMdYgo",
+    "authDomain": "z-rjpq.firebaseapp.com",
+    "databaseURL": "https://z-rjpq-default-rtdb.firebaseio.com",
+    "projectId": "z-rjpq",
+    "storageBucket": "z-rjpq.firebasestorage.app",
+    "messagingSenderId": "447579947576",
+    "appId": "1:447579947576:web:6ab62f0341ef2fb77e1ccd",
     "measurementId": "G-9VECGGNYNF"
   }
 }

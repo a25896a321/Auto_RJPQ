@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase/app";
-import { getDatabase, ref, set, get, onValue, update, onDisconnect, push, serverTimestamp, remove, runTransaction } from "firebase/database";
+import { getDatabase, ref, set, get, onValue, update, onDisconnect, push, serverTimestamp, remove, runTransaction, increment, query, limitToLast } from "firebase/database";
 import { getAuth, signInAnonymously } from "firebase/auth";
 
 let config = null;
@@ -29,24 +29,11 @@ async function init() {
         const credential = await signInAnonymously(auth);
         myUid = credential.user.uid;
 
-        // Real-time server stats and cleanup of ghost empty rooms
-        onValue(ref(db, 'rooms'), (snap) => {
-            const rooms = snap.val() || {};
-            let totalPlayers = 0;
-            let validRoomCount = 0;
-
-            Object.entries(rooms).forEach(([rid, r]) => {
-                const pCount = r.players ? Object.keys(r.players).length : 0;
-                if (pCount === 0) {
-                    remove(ref(db, `rooms/${rid}`));
-                } else {
-                    validRoomCount++;
-                    totalPlayers += pCount;
-                }
-            });
-
-            document.getElementById('stat-rooms').textContent = validRoomCount;
-            document.getElementById('stat-users').textContent = totalPlayers;
+        // Real-time server stats — 只監聽輕量計數器，不下載所有房間資料
+        onValue(ref(db, 'stats'), (snap) => {
+            const s = snap.val() || {};
+            document.getElementById('stat-rooms').textContent = Math.max(0, s.rooms || 0);
+            document.getElementById('stat-users').textContent = Math.max(0, s.users || 0);
         });
 
         // Sync sequences in dropdown
@@ -136,6 +123,8 @@ async function doCreate() {
     log('正在建立房間...', 'info');
     try {
         await set(ref(db, `rooms/${newRoomId}`), roomState);
+        // 建立房間：房間數 +1，在線人數 +1
+        await update(ref(db, 'stats'), { rooms: increment(1), users: increment(1) });
         joinRoomStream(newRoomId);
     } catch (err) {
         log('建立失敗: ' + err.message, 'error');
@@ -212,6 +201,8 @@ async function doJoin() {
         if (playerArray.some(p => p.nick === nick)) return alert('暱稱重複。');
 
         await set(ref(db, `rooms/${targetRoomId}/players/${myUid}`), myInfo);
+        // 加入房間：在線人數 +1
+        await update(ref(db, 'stats'), { users: increment(1) });
         joinRoomStream(targetRoomId);
     } catch (err) {
         log('加入失敗: ' + err.message, 'error');
@@ -241,8 +232,8 @@ function joinRoomStream(rid) {
         document.getElementById('rm-txt-sw').style.background = e.target.value;
     });
 
-    // Logs subscription
-    const logsRef = ref(db, `rooms/${rid}/logs`);
+    // Logs subscription — 只取最新 20 筆，減少下載量
+    const logsRef = query(ref(db, `rooms/${rid}/logs`), limitToLast(20));
     let lastLogTime = Date.now();
     onValue(logsRef, (snap) => {
         const data = snap.val();
@@ -257,8 +248,8 @@ function joinRoomStream(rid) {
         });
     });
 
-    // 4. 聊天室同步監聽 (Chat Subscription)
-    const chatRef = ref(db, `rooms/${rid}/chat`);
+    // 4. 聊天室同步監聽 — 只取最新 20 筆，減少下載量
+    const chatRef = query(ref(db, `rooms/${rid}/chat`), limitToLast(20));
     onValue(chatRef, (snap) => {
         const data = snap.val();
         if (!data) return;
@@ -283,10 +274,13 @@ function joinRoomStream(rid) {
     // 1. 強化連線狀態與斷線重連邏輯 (Presence Logic)
     // 防止玩家因為網路閃斷被 onDisconnect 刪除後，無法自動回到房間列表
     const presenceRef = ref(db, `rooms/${rid}/players/${myUid}`);
+    const statsRef = ref(db, 'stats');
     onValue(ref(db, '.info/connected'), (snap) => {
         if (snap.val() === true) {
             // 每次重新連線到 Firebase，都要重新註冊斷線刪除邏輯
             onDisconnect(presenceRef).remove();
+            // 斷線時自動扣減 stats（只扣 users，room 由最後一人離開時處理）
+            onDisconnect(statsRef).update({ users: increment(-1) });
             // 並重新寫入個人資訊確保自己在成員名單中
             if (myInfo && roomId === rid) {
                 set(presenceRef, myInfo);
@@ -475,8 +469,7 @@ function getFloorUpdates(f, d, btn, floorData, currentNick, currentColor, auto) 
                     updates[`${i}/o_errors`] = oList.filter(e => e !== currentNick);
                 }
             }
-            msg = `取消標記 L${10 - f}`;
-            type = 'warn';
+            // 不打印取消標記日誌
         } else if (cell.v === 0) {
             // 標記為正確
             for (let i = 0; i < 4; i++) {
@@ -499,11 +492,9 @@ function getFloorUpdates(f, d, btn, floorData, currentNick, currentColor, auto) 
             if (auto) {
                 for (let i = 0; i < 4; i++) {
                     if (i === d) {
-                        // 當前格確信正確，則確保 o_errors 沒有自己 (這步在上面的循環已處理，這裡確保一致性)
                         let oList = updates[`${i}/o_errors`] || floorData[i].o_errors || [];
                         updates[`${i}/o_errors`] = oList.filter(e => e !== currentNick);
                     } else {
-                        // 同樓層其他格自動標註為 o_errors
                         let oList = updates[`${i}/o_errors`] || floorData[i].o_errors || [];
                         if (!oList.includes(currentNick)) {
                             updates[`${i}/o_errors`] = [...oList, currentNick];
@@ -511,8 +502,7 @@ function getFloorUpdates(f, d, btn, floorData, currentNick, currentColor, auto) 
                     }
                 }
             }
-            msg = `標記 L${10 - f} 正確：第${d + 1}格`;
-            type = 'ok';
+            // 不打印標記正確日誌
         }
     } else if (btn === 'right') {
         if (cell.v === 1) return { updates: {} };
@@ -696,11 +686,13 @@ function leaveRoom() {
         const playerKeys = Object.keys(players || {});
 
         if (playerKeys.length <= 1 && players[myUid]) {
-            // I am the last player
+            // 最後一人：刪除整個房間，同時 rooms -1, users -1
             remove(ref(db, `rooms/${roomId}`));
+            update(ref(db, 'stats'), { rooms: increment(-1), users: increment(-1) });
         } else {
-            // Just remove myself
+            // 只移除自己，users -1
             remove(ref(db, `rooms/${roomId}/players/${myUid}`));
+            update(ref(db, 'stats'), { users: increment(-1) });
         }
 
         roomId = null;
@@ -823,6 +815,8 @@ window.app = {
     kickPlayer: async (uid, nick) => {
         if (!confirm(`確定要將 ${nick} 移出房間嗎？`)) return;
         await remove(ref(db, `rooms/${roomId}/players/${uid}`));
+        // 被踢玩家的 users -1
+        await update(ref(db, 'stats'), { users: increment(-1) });
         log(`已將 ${nick} 移出房間`, 'warn');
     }
 };
