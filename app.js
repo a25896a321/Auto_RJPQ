@@ -29,11 +29,28 @@ async function init() {
         const credential = await signInAnonymously(auth);
         myUid = credential.user.uid;
 
-        // Real-time server stats — 只監聽輕量計數器，不下載所有房間資料
+        // Real-time server stats for rooms
         onValue(ref(db, 'stats'), (snap) => {
             const s = snap.val() || {};
             document.getElementById('stat-rooms').textContent = Math.max(0, s.rooms || 0);
-            document.getElementById('stat-users').textContent = Math.max(0, s.users || 0);
+        });
+
+        // Global Visitors Presence logic
+        const globalPresenceRef = ref(db, `presence/${myUid}`);
+        onValue(ref(db, '.info/connected'), (snap) => {
+            if (snap.val() === true) {
+                onDisconnect(globalPresenceRef).remove();
+                set(globalPresenceRef, true);
+            }
+        });
+
+        // Real-time globally active users
+        onValue(ref(db, 'presence'), (snap) => {
+            if (snap.exists()) {
+                document.getElementById('stat-users').textContent = Object.keys(snap.val()).length;
+            } else {
+                document.getElementById('stat-users').textContent = 0;
+            }
         });
 
         // Sync sequences in dropdown
@@ -123,8 +140,8 @@ async function doCreate() {
     log('正在建立房間...', 'info');
     try {
         await set(ref(db, `rooms/${newRoomId}`), roomState);
-        // 建立房間：房間數 +1，在線人數 +1
-        await update(ref(db, 'stats'), { rooms: increment(1), users: increment(1) });
+        // 建立房間：房間數 +1 (不影響 users)
+        await update(ref(db, 'stats'), { rooms: increment(1) });
         joinRoomStream(newRoomId);
     } catch (err) {
         log('建立失敗: ' + err.message, 'error');
@@ -201,8 +218,7 @@ async function doJoin() {
         if (playerArray.some(p => p.nick === nick)) return alert('暱稱重複。');
 
         await set(ref(db, `rooms/${targetRoomId}/players/${myUid}`), myInfo);
-        // 加入房間：在線人數 +1
-        await update(ref(db, 'stats'), { users: increment(1) });
+        // 不再改變 stats/users
         joinRoomStream(targetRoomId);
     } catch (err) {
         log('加入失敗: ' + err.message, 'error');
@@ -279,8 +295,7 @@ function joinRoomStream(rid) {
         if (snap.val() === true) {
             // 每次重新連線到 Firebase，都要重新註冊斷線刪除邏輯
             onDisconnect(presenceRef).remove();
-            // 斷線時自動扣減 stats（只扣 users，room 由最後一人離開時處理）
-            onDisconnect(statsRef).update({ users: increment(-1) });
+            // 斷線時不再扣減 stats/users，因為已由 presence/${myUid} 全域處理
             // 並重新寫入個人資訊確保自己在成員名單中
             if (myInfo && roomId === rid) {
                 set(presenceRef, myInfo);
@@ -301,6 +316,17 @@ function joinRoomStream(rid) {
             return;
         }
         roomData = snap.val();
+        
+        // 若房內已無任何真實玩家，直接關閉房間 (防呆清理機制)
+        const currentPlayers = Object.keys(roomData.players || {});
+        if (currentPlayers.length === 0 && roomId === rid) {
+            // 如果我是最後一個剛剛被 onDisconnect 刪除或退出的，但介面還在
+            remove(ref(db, `rooms/${roomId}`));
+            update(ref(db, 'stats'), { rooms: increment(-1) });
+            leaveRoom();
+            return;
+        }
+
         options = roomData.config.options;
         renderRoom();
         // 注意：這裡不再自動 resetIdleTimer，改由使用者實際操作觸發
@@ -686,13 +712,12 @@ function leaveRoom() {
         const playerKeys = Object.keys(players || {});
 
         if (playerKeys.length <= 1 && players[myUid]) {
-            // 最後一人：刪除整個房間，同時 rooms -1, users -1
+            // 最後一人：刪除整個房間，同時 rooms -1 (不再影響 users)
             remove(ref(db, `rooms/${roomId}`));
-            update(ref(db, 'stats'), { rooms: increment(-1), users: increment(-1) });
+            update(ref(db, 'stats'), { rooms: increment(-1) });
         } else {
-            // 只移除自己，users -1
+            // 只移除自己
             remove(ref(db, `rooms/${roomId}/players/${myUid}`));
-            update(ref(db, 'stats'), { users: increment(-1) });
         }
 
         roomId = null;

@@ -1,5 +1,15 @@
 {
   "rules": {
+    "stats": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    "presence": {
+      ".read": "auth != null",
+      "$uid": {
+         ".write": "auth != null && auth.uid === $uid"
+      }
+    },
     "rooms": {
       ".read": "auth != null",
       "$rid": {
