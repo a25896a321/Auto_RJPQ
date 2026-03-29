@@ -78,6 +78,9 @@ async function init() {
             showLanding(hash);
         }
 
+        // 啟動時清理空房間
+        cleanupEmptyRooms();
+
         log('系統已就緒，請建立或加入房間。', 'ok');
     } catch (e) {
         console.error(e);
@@ -95,6 +98,34 @@ function setupUIStrings() {
     document.getElementById('txt-btn-create').textContent = s.buttons.create;
     document.getElementById('txt-btn-join').textContent = s.buttons.join;
     document.getElementById('txt-stats-title').textContent = s.lobby.statsTitle;
+}
+
+// ===== AUTO CLEANUP =====
+async function cleanupEmptyRooms() {
+    try {
+        const snap = await get(ref(db, 'rooms'));
+        if (!snap.exists()) return;
+        
+        const rooms = snap.val();
+        let deletedCount = 0;
+        const updates = {};
+        
+        for (const [rid, room] of Object.entries(rooms)) {
+            const players = room.players || {};
+            if (Object.keys(players).length === 0) {
+                updates[`rooms/${rid}`] = null;
+                deletedCount++;
+            }
+        }
+        
+        if (deletedCount > 0) {
+            updates['stats/rooms'] = increment(-deletedCount);
+            await update(ref(db), updates);
+            log(`(系統) 已自動清理 ${deletedCount} 個無人存活的幽靈房間。`, 'warn');
+        }
+    } catch (e) {
+        console.warn("Cleanup error:", e);
+    }
 }
 
 // ===== CORE ACTIONS =====

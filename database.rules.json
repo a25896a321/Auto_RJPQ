@@ -13,7 +13,7 @@
     "rooms": {
       ".read": "auth != null",
       "$rid": {
-        ".write": "auth != null && (!data.exists() || data.child('players').hasChild(auth.uid) || data.child('config/hostId').val() === auth.uid)",
+        ".write": "auth != null && (!data.exists() || data.child('players').hasChild(auth.uid) || data.child('config/hostId').val() === auth.uid || !data.child('players').exists())",
         "config": {
           ".read": "auth != null",
           "password": {
